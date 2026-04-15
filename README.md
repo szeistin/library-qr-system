@@ -10,7 +10,7 @@ A dual-interface web application for **Polangui Municipal Library** to modernize
 * **Frontend:** React (Vite), Tailwind CSS
 * **QR Scanning:** html5-qrcode (Webcam)
 * **Authentication:** JWT + PIN
-* **Deployment:** Render (backend) + local network or full Render deployment
+* **Deployment:** Render (backend) + local network or cloud deployment
 
 ---
 
@@ -18,12 +18,12 @@ A dual-interface web application for **Polangui Municipal Library** to modernize
 
 ### 📱 Visitor Mobile System
 
-* Register with personal info (name, address, DOB, gender, course, profession, purpose)
+* Register visitor information (name, address, DOB, gender, course, profession, purpose)
 * Generate QR visitor pass + reference number
 * Edit profile (purpose editable)
-* Check-in/out via QR scan
-* Search & borrow books (age-based recommendations)
-* Borrow request (1–3 days return)
+* Check-in / Check-out via QR scan
+* Search and borrow books (recommendation-based)
+* Borrow request (1–3 days return period)
 * View borrowing history:
 
   * Active
@@ -36,38 +36,50 @@ A dual-interface web application for **Polangui Municipal Library** to modernize
 ### 🖥️ Admin Dashboard
 
 * Secure login (username + 4-digit PIN)
-* Real-time stats:
+
+* Real-time statistics:
 
   * Today’s visitors
-  * Checked in/out
+  * Checked-in / Checked-out
   * Active borrows
-* QR Scanner (webcam) for check-in/out
-* Manual check-in (reference number)
+
+* QR Scanner (webcam-based)
+
+* Manual check-in via reference number
+
 * Active visitors list
+
+---
 
 #### 📚 Borrowing Management
 
 * Confirm Borrow QR
-* Mark Returned (with damage notes)
-* Mark Not Returned (lost)
+* Mark Returned (with optional damage notes)
+* Mark Not Returned (lost item handling)
 * Send Reminder (SMS/email simulation)
 
-#### 📊 Reports
+---
 
-* Demographics charts
-* Progress Data (editable report)
-* Export to **PDF / DOC**
+#### 📊 Reports & Analytics
 
-#### 🔧 Utilities
+* Visitor demographics charts
+
+* Monthly Progress Data (editable report)
+
+* Export reports as:
+
+  * PDF
+  * DOC
 
 * Visitor Mobile Pass helper
-* Staff logs (placeholder)
+
+* Staff logs (placeholder module)
 
 ---
 
 ## 📦 Prerequisites
 
-* Node.js (v18+) → https://nodejs.org
+* Node.js (v18 or later) → https://nodejs.org
 * MongoDB Atlas → https://www.mongodb.com/cloud/atlas
 * Git (optional)
 * Webcam (for QR scanning)
@@ -92,13 +104,29 @@ cd backend
 npm install
 ```
 
-Create `.env` file inside **backend/**:
+#### 📦 Backend Dependencies
+
+* express
+* mongoose
+* cors
+* dotenv
+* bcryptjs
+* jsonwebtoken
+* qrcode
+* date-fns
+* nodemon (dev)
+
+---
+
+#### 🔐 Environment Variables (backend/.env)
 
 ```env
 PORT=5000
 JWT_SECRET=your_super_secret_key
-MONGO_URI=mongodb+srv://USERNAME:PASSWORD@cluster.mongodb.net/library_db?retryWrites=true&w=majority
+MONGO_URI=mongodb+srv://<username>:<password>@cluster.mongodb.net/library_db?retryWrites=true&w=majority
 ```
+
+Replace `<username>` and `<password>` with your MongoDB Atlas credentials.
 
 ---
 
@@ -109,31 +137,63 @@ cd ../frontend
 npm install
 ```
 
-Create `.env` inside **frontend/**:
+#### 📦 Frontend Dependencies
+
+* react
+* react-dom
+* react-router-dom
+* lucide-react
+* qrcode
+* recharts
+* date-fns
+* sonner
+* html5-qrcode
+* html2pdf.js
+* file-saver
+* tailwindcss
+* postcss
+* autoprefixer
+* vite
+
+---
+
+#### 🌐 Environment Variables (frontend/.env)
 
 ```env
 VITE_API_URL=http://localhost:5000/api
 ```
 
+If deployed, replace with your Render backend URL.
+
 ---
 
 ### 4. Run the Application
 
-#### Backend
+#### ▶ Backend
 
 ```bash
+cd backend
 node server.js
-# or
+```
+
+or
+
+```bash
 npx nodemon server.js
 ```
 
-#### Frontend
+---
+
+#### ▶ Frontend
 
 ```bash
+cd frontend
 npm run dev
 ```
 
-Open:
+---
+
+Open in browser:
 
 ```
 http://localhost:5173
@@ -141,30 +201,29 @@ http://localhost:5173
 
 ---
 
-## 📱 Usage
+## 📱 Usage Flow
 
 1. Open system → `http://localhost:5173`
 2. Choose:
 
-   * **Mobile Demo** (Visitor)
-   * **Admin Demo**
-
-Default admin (example):
-
-```
-username: librarian
-PIN: 1234
-```
+   * Visitor Mobile System
+   * Admin Dashboard
+3. Register visitor → generate QR
+4. Scan QR in admin → check-in/out
+5. Borrow books → confirm in admin
+6. Return books → add notes if needed
+7. View reports → export PDF/DOC
 
 ---
 
 ## 🧪 Testing
 
-* Register visitor → get QR
-* Scan QR in admin → check-in/out
-* Borrow book → confirm in admin
-* Return book → add issue (optional)
-* View Progress Data → export PDF/DOC
+* Register visitor and generate QR
+* Scan QR in admin dashboard
+* Borrow book and confirm loan
+* Return book with/without issues
+* Check Progress Data report
+* Export PDF / DOC
 
 ---
 
@@ -184,11 +243,11 @@ cd backend && npm install
 node server.js
 ```
 
-* Add env:
+* Add env variables:
 
-  * `MONGO_URI`
-  * `JWT_SECRET`
-  * `PORT`
+  * MONGO_URI
+  * JWT_SECRET
+  * PORT
 
 ---
 
@@ -204,10 +263,10 @@ cd frontend && npm install && npm run build
 frontend/dist
 ```
 
-* Env:
+* Environment:
 
 ```
-VITE_API_URL=https://your-backend-url
+VITE_API_URL = your backend URL
 ```
 
 ---
@@ -217,8 +276,6 @@ VITE_API_URL=https://your-backend-url
 * Christine Jade P. Ondis
 * Kristine O. Villanueva
 * Magdaline S. Infante
-
-**BS Information System – Bicol University Polangui**
 
 ---
 
