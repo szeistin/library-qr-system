@@ -23,6 +23,7 @@ const bookRoutes = require("./routes/books");
 const loanRoutes = require("./routes/loans");
 const reportRoutes = require("./routes/reports");
 const visitRoutes = require('./routes/visits');
+const demographicsRoutes = require("./routes/demographics");
 
 app.use("/api/visitors", visitorRoutes);
 app.use("/api/stats", statsRoutes);
@@ -31,6 +32,7 @@ app.use("/api/books", bookRoutes);
 app.use("/api/loans", loanRoutes);
 app.use("/api/reports", reportRoutes);
 app.use('/api/visits', visitRoutes);
+app.use("/api/demographics", demographicsRoutes);
 
 app.get("/", (req, res) => {
    res.send("Library API is running");

@@ -1,71 +1,106 @@
 const express = require("express");
 const router = express.Router();
 const Visit = require("../models/Visit");
-// @ts-ignore
 const Visitor = require("../models/Visitor");
+const Loan = require("../models/Loan");
 const { startOfDay, endOfDay } = require("date-fns");
 
-// GET /api/visits/today
-router.get("/today", async (req, res) => {
-   try {
-      const todayStart = startOfDay(new Date());
-      const todayEnd = endOfDay(new Date());
-      const visits = await Visit.find({
-         check_in_time: { $gte: todayStart, $lte: todayEnd },
-      }).populate("visitor", "name gender age reference_number ageGroup");
-      res.json(visits);
-   } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Server error" });
-   }
-});
-// GET /api/visits/stats
-router.get("/stats", async (req, res) => {
-   try {
-      const todayStart = startOfDay(new Date());
-      const todayEnd = endOfDay(new Date());
-      const totalToday = await Visit.countDocuments({
-         check_in_time: { $gte: todayStart, $lte: todayEnd },
-      });
-      const checkedIn = await Visit.countDocuments({ status: "active" });
-      const checkedOut = await Visit.countDocuments({
-         status: "completed",
-         check_out_time: { $gte: todayStart, $lte: todayEnd },
-      });
-      const activeBorrows = await require("../models/Loan").countDocuments({
-         status: "borrowed",
-      });
-      res.json({ totalToday, checkedIn, checkedOut, activeBorrows });
-   } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Server error" });
-   }
-});
+// =========================
+// HELPERS
+// =========================
+function getAge(dob) {
+   if (!dob) return null;
+   const birthDate = new Date(dob);
+   const today = new Date();
+   let age = today.getFullYear() - birthDate.getFullYear();
+   const m = today.getMonth() - birthDate.getMonth();
+   if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+   return age;
+}
 
-// POST /api/visits/checkin
-router.post("/checkin", async (req, res) => {
-   try {
-      const { qr_token, reference_number, purpose } = req.body;
-      let visitor;
-      if (qr_token) visitor = await Visitor.findOne({ qr_token });
-      else if (reference_number)
-         visitor = await Visitor.findOne({ reference_number });
-      if (!visitor) return res.status(404).json({ error: "Visitor not found" });
+function getAgeGroup(dob) {
+   const age = getAge(dob);
+   if (age === null) return "Unknown";
+   if (age >= 6 && age <= 12) return "Children";
+   if (age >= 13 && age <= 21) return "Adolescents";
+   if (age >= 22 && age <= 35) return "Young Adults";
+   if (age >= 36) return "Adults";
+   return "PWD";
+}
 
+// =========================
+// 🔥 SCAN (AUTO TOGGLE)
+// =========================
+router.post("/scan", async (req, res) => {
+   try {
+      let { qr_token, reference_number, purpose } = req.body;
+      // Trim whitespace
+      if (reference_number) reference_number = reference_number.trim();
+      if (qr_token) qr_token = qr_token.trim();
+
+      console.log("Scan - qr_token:", qr_token, "reference_number:", reference_number);
+
+      let visitor = null;
+      if (qr_token) {
+         visitor = await Visitor.findOne({ qr_token });
+      }
+      if (!visitor && reference_number) {
+         // Use case-insensitive regex (though already uppercase, but for safety)
+         visitor = await Visitor.findOne({ reference_number: { $regex: new RegExp(`^${reference_number}$`, 'i') } });
+      }
+
+      if (!visitor) {
+         console.log("Visitor not found for ref:", reference_number);
+         return res.status(404).json({ error: "Visitor not found" });
+      }
+
+      // 🔍 CHECK ACTIVE VISIT
       const activeVisit = await Visit.findOne({
          visitor: visitor._id,
          status: "active",
       });
-      if (activeVisit)
-         return res.status(400).json({ error: "Visitor already checked in" });
+
+      // =========================
+      // ✅ CHECK OUT
+      // =========================
+      if (activeVisit) {
+         activeVisit.status = "completed";
+         activeVisit.check_out_time = new Date();
+         await activeVisit.save();
+
+         return res.json({
+            action: "checkout",
+            message: "Checked out",
+            visit: {
+               ...activeVisit.toObject(),
+               visitor: {
+                  name: visitor.name,
+                  reference_number: visitor.reference_number,
+                  qr_token: visitor.qr_token,
+               },
+            },
+         });
+      }
+
+      // =========================
+      // ✅ CHECK IN
+      // =========================
+      const age = getAge(visitor.dob);
+      const ageGroup = getAgeGroup(visitor.dob);
 
       const visit = new Visit({
          visitor: visitor._id,
          purpose: purpose || visitor.purpose,
          status: "active",
+         check_in_time: new Date(), // ✅ IMPORTANT FIX
+         age,
+         ageGroup,
       });
+
       await visit.save();
-      res.json({
+
+      return res.json({
+         action: "checkin",
          message: "Checked in",
          visit: {
             ...visit.toObject(),
@@ -77,41 +112,44 @@ router.post("/checkin", async (req, res) => {
          },
       });
    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Server error" });
+      console.error("SCAN ERROR:", err);
+      return res.status(500).json({ error: err.message });
    }
 });
 
-// POST /api/visits/checkout
-router.post("/checkout", async (req, res) => {
+// =========================
+// STATS
+// =========================
+router.get("/stats", async (req, res) => {
    try {
-      const { qr_token, reference_number } = req.body;
-      let visitor;
-      if (qr_token) visitor = await Visitor.findOne({ qr_token });
-      else if (reference_number)
-         visitor = await Visitor.findOne({ reference_number });
-      if (!visitor) return res.status(404).json({ error: "Visitor not found" });
+      const todayStart = startOfDay(new Date());
+      const todayEnd = endOfDay(new Date());
 
-      const visit = await Visit.findOne({
-         visitor: visitor._id,
-         status: "active",
-      });
-      if (!visit) return res.status(400).json({ error: "No active visit" });
+      // Total unique visitors today (count distinct visitor IDs)
+      const uniqueVisitorsToday = await Visit.aggregate([
+         { $match: { check_in_time: { $gte: todayStart, $lte: todayEnd } } },
+         { $group: { _id: "$visitor" } },
+         { $count: "count" }
+      ]);
+      const totalToday = uniqueVisitorsToday.length > 0 ? uniqueVisitorsToday[0].count : 0;
 
-      visit.check_out_time = new Date();
-      visit.status = "completed";
-      await visit.save();
-      res.json({
-         message: "Checked out",
-         visit: { ...visit.toObject(), visitor: { name: visitor.name } },
+      const checkedIn = await Visit.countDocuments({ status: "active" });
+      const checkedOut = await Visit.countDocuments({
+         status: "completed",
+         check_out_time: { $gte: todayStart, $lte: todayEnd },
       });
+      const activeBorrows = await Loan.countDocuments({ status: "borrowed" });
+
+      res.json({ totalToday, checkedIn, checkedOut, activeBorrows });
    } catch (err) {
       console.error(err);
-      res.status(500).json({ error: "Server error" });
+      res.status(500).json({ error: err.message });
    }
 });
 
-// GET /api/visits/active
+// =========================
+// ACTIVE VISITORS
+// =========================
 router.get("/active", async (req, res) => {
    try {
       const visits = await Visit.find({ status: "active" }).populate(
@@ -121,7 +159,39 @@ router.get("/active", async (req, res) => {
       res.json(visits);
    } catch (err) {
       console.error(err);
-      res.status(500).json({ error: "Server error" });
+      res.status(500).json({ error: err.message });
+   }
+});
+
+// =========================
+// TODAY VISITS
+// =========================
+router.get("/today", async (req, res) => {
+   try {
+      const todayStart = startOfDay(new Date());
+      const todayEnd = endOfDay(new Date());
+
+      const visits = await Visit.find({
+         check_in_time: { $gte: todayStart, $lte: todayEnd },
+      })
+         .populate("visitor", "name gender reference_number qr_token dob")
+         .sort({ check_in_time: -1 });
+
+      const formatted = visits.map((v) => {
+         const age = v.age ?? getAge(v.visitor?.dob);
+         const ageGroup = v.ageGroup ?? getAgeGroup(v.visitor?.dob);
+
+         return {
+            ...v.toObject(),
+            age,
+            ageGroup,
+         };
+      });
+
+      res.json(formatted);
+   } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: err.message });
    }
 });
 

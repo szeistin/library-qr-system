@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
-  BookOpen, LayoutDashboard, BookMarked, BarChart3, Smartphone,
+  LayoutDashboard, BookMarked, BarChart3, Smartphone,
   LogOut, Bell, Menu, X, ChevronRight
 } from "lucide-react";
+import logo from "../assets/logo.png";
 
 const API_URL = import.meta.env.VITE_API_URL;
 const NAV_ITEMS = [
@@ -62,14 +63,12 @@ export default function AdminLayout() {
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed lg:sticky top-0 left-0 h-screen w-64 bg-[#1B3A6B] flex flex-col z-30 transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}>
+      <aside className={`fixed lg:sticky top-0 left-0 h-screen w-64 bg-[#1B3A6B] flex flex-col z-30 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="px-5 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-[#C9A227] rounded-xl flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-white" />
-            </div>
+            <img src={logo} alt="Logo" className="w-9 h-9 rounded-xl object-cover" />
             <div>
-              <p className="text-white text-xs font-bold">Polangui Municipal</p>
+              <p className="text-white text-xs font-bold leading-tight">Polangui Municipal</p>
               <p className="text-[#C9A227] text-xs font-bold">LIBRARY</p>
             </div>
             <button onClick={() => setSidebarOpen(false)} className="ml-auto text-white/50 lg:hidden">
@@ -78,7 +77,7 @@ export default function AdminLayout() {
           </div>
           <div className="mt-3 bg-white/10 rounded-lg p-2.5">
             <p className="text-blue-200 text-xs">Logged in as</p>
-            <p className="text-white text-sm font-semibold">{staff?.username || "Staff"}</p>
+            <p className="text-white text-sm font-semibold">{staff?.username || 'Staff'}</p>
             <p className="text-blue-300 text-xs">{staff?.position}</p>
           </div>
         </div>
@@ -92,11 +91,11 @@ export default function AdminLayout() {
                 onClick={() => { navigate(path); setSidebarOpen(false); }}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all ${
                   active
-                    ? "bg-white text-[#1B3A6B] font-bold shadow-md"
-                    : "text-blue-100 hover:bg-white/10 hover:text-white"
+                    ? 'bg-white text-[#1B3A6B] font-bold shadow-md'
+                    : 'text-blue-100 hover:bg-white/10 hover:text-white'
                 }`}
               >
-                <Icon className="w-4 h-4" />
+                <Icon className="w-4 h-4 flex-shrink-0" />
                 <span className="flex-1 text-left">{label}</span>
                 {active && <ChevronRight className="w-3 h-3" />}
               </button>
@@ -122,13 +121,11 @@ export default function AdminLayout() {
             <Menu className="w-5 h-5" />
           </button>
           <div className="flex-1">
-            <h1 className="text-[#1B3A6B] font-bold text-sm">{currentNav?.label || "Admin"}</h1>
-            <p className="text-gray-400 text-xs">
-              {new Date().toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })} • QR-Based Library Management System
-            </p>
+            <h1 className="text-[#1B3A6B] font-bold text-sm">{currentNav?.label || 'Admin'}</h1>
+            <p className="text-gray-400 text-xs">{new Date().toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' })} • QR-Based Library Management System</p>
           </div>
           <button
-            onClick={() => navigate("/admin/borrowing")}
+            onClick={() => navigate('/admin/borrowing')}
             className="relative p-2 rounded-xl hover:bg-gray-100 transition"
             title="View due date alerts"
           >

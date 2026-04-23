@@ -20,6 +20,8 @@ export default function Borrowing() {
   const confirmScannerInstance = useRef(null);
   const lastScannedToken = useRef(null);
   const lastScanTime = useRef(0);
+  const [selectedIssue, setSelectedIssue] = useState("");
+  const [customIssue, setCustomIssue] = useState("");
 
   const token = localStorage.getItem("token");
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
@@ -50,7 +52,7 @@ export default function Borrowing() {
     }
   }, [searchTerm, activeLoans]);
 
-  // ---- Confirm Borrow Scanner (activates pending loan) ----
+  // Confirm Borrow Scanner
   useEffect(() => {
     const startConfirmScanner = async () => {
       if (!confirmScannerRef.current) return;
@@ -91,7 +93,6 @@ export default function Borrowing() {
     };
   }, []);
 
-  // ---- Confirm borrow (activate pending loan) ----
   const handleConfirmBorrow = async (borrowToken) => {
     if (!borrowToken) return;
     setLoading(true);
@@ -111,7 +112,7 @@ export default function Borrowing() {
     }
   };
 
-  // ---- Return book (manual from table) ----
+  // ---- Return book (with issues selection) ----
   const handleReturnBook = async (borrowToken, issues = "") => {
     if (!borrowToken) return;
     setLoading(true);
@@ -124,6 +125,8 @@ export default function Borrowing() {
       toast.success("Book returned");
       fetchActiveLoans();
       setReturnModal({ open: false, loan: null, issues: "" });
+      setSelectedIssue("");
+      setCustomIssue("");
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -131,7 +134,7 @@ export default function Borrowing() {
     }
   };
 
-  // ---- Not Returned (no prompt) ----
+  // Not Returned
   const handleNotReturned = async (loan) => {
     setLoading(true);
     try {
@@ -148,7 +151,6 @@ export default function Borrowing() {
     }
   };
 
-  // ---- Send reminder ----
   const handleSendReminder = async (loan) => {
     if (loan.reminder_sent) return;
     try {
@@ -160,6 +162,29 @@ export default function Borrowing() {
       toast.error("Failed to send reminder");
     }
   };
+
+  // Open return modal with pre-selected issue
+  const openReturnModal = (loan) => {
+    setSelectedIssue("");
+    setCustomIssue("");
+    setReturnModal({ open: true, loan, issues: "" });
+  };
+
+  const handleConfirmReturn = () => {
+    let finalIssue = "";
+    if (selectedIssue === "custom") {
+      finalIssue = customIssue;
+    } else if (selectedIssue) {
+      finalIssue = selectedIssue;
+    }
+    if (!finalIssue) {
+      toast.error("Please select an issue or type a description");
+      return;
+    }
+    handleReturnBook(returnModal.loan.borrow_qr_token, finalIssue);
+  };
+
+  const issueOptions = ["Missing/Lost", "Torn pages", "Water damage", "Vandalized", "Cover torn"];
 
   const overdueLoans = activeLoans.filter(l => isPast(new Date(l.due_date)) && l.status !== "returned" && l.status !== "not_returned");
   const dueTodayLoans = activeLoans.filter(l => isToday(new Date(l.due_date)) && l.status === "borrowed");
@@ -196,8 +221,8 @@ export default function Borrowing() {
           </div>
         </div>
         <div className="bg-gray-900 rounded-xl w-full max-w-xs h-48 mx-auto overflow-hidden mb-3">
-  <div id="confirm-scanner-container" ref={confirmScannerRef} className="w-full h-full"></div>
-</div>
+          <div id="confirm-scanner-container" ref={confirmScannerRef} className="w-full h-full"></div>
+        </div>
         <div className="flex gap-2">
           <input
             className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs"
@@ -261,7 +286,7 @@ export default function Borrowing() {
                     <td className="p-2 space-y-1">
                       {loan.status !== "returned" && loan.status !== "not_returned" && (
                         <>
-                          <button onClick={() => setReturnModal({ open: true, loan, issues: "" })} className="bg-blue-600 text-white text-[11px] px-2 py-1 rounded w-full">
+                          <button onClick={() => openReturnModal(loan)} className="bg-blue-600 text-white text-[11px] px-2 py-1 rounded w-full">
                             Mark Returned
                           </button>
                           <button onClick={() => handleNotReturned(loan)} className="bg-red-600 text-white text-[11px] px-2 py-1 rounded w-full">
@@ -304,7 +329,7 @@ export default function Borrowing() {
         </div>
       )}
 
-      {/* Return Modal */}
+      {/* Enhanced Return Modal with issue chips */}
       {returnModal.open && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full p-5">
@@ -312,16 +337,36 @@ export default function Borrowing() {
               <h3 className="text-lg font-bold">Return: {returnModal.loan?.book.title}</h3>
               <button onClick={() => setReturnModal({ open: false, loan: null, issues: "" })}><X className="w-5 h-5" /></button>
             </div>
-            <textarea
-              value={returnModal.issues}
-              onChange={e => setReturnModal({ ...returnModal, issues: e.target.value })}
-              placeholder="Any issues? (e.g., damaged pages)"
-              rows={3}
-              className="w-full border rounded-lg p-2 text-sm mb-3"
-            />
+            <p className="text-sm text-gray-600 mb-3">Is there an issue with the returned book?</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {issueOptions.map(issue => (
+                <button
+                  key={issue}
+                  onClick={() => setSelectedIssue(issue)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${selectedIssue === issue ? "bg-red-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+                >
+                  {issue}
+                </button>
+              ))}
+              <button
+                onClick={() => setSelectedIssue("custom")}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${selectedIssue === "custom" ? "bg-red-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+              >
+                Other (specify)
+              </button>
+            </div>
+            {selectedIssue === "custom" && (
+              <textarea
+                value={customIssue}
+                onChange={e => setCustomIssue(e.target.value)}
+                placeholder="Please describe the issue..."
+                rows={2}
+                className="w-full border rounded-lg p-2 text-sm mb-3"
+              />
+            )}
             <div className="flex gap-2">
               <button onClick={() => setReturnModal({ open: false, loan: null, issues: "" })} className="flex-1 bg-gray-200 py-2 rounded">Cancel</button>
-              <button onClick={() => handleReturnBook(returnModal.loan.borrow_qr_token, returnModal.issues)} className="flex-1 bg-blue-600 text-white py-2 rounded">Confirm Return</button>
+              <button onClick={handleConfirmReturn} className="flex-1 bg-blue-600 text-white py-2 rounded">Confirm Return</button>
             </div>
           </div>
         </div>

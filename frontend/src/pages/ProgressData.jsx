@@ -15,8 +15,12 @@ const defaultDemographics = {
 };
 
 export default function ProgressData() {
-  const [month, setMonth] = useState(3);
-  const [year, setYear] = useState(2026);
+  const currentYear = new Date().getFullYear(); // 2026
+  const currentMonth = new Date().getMonth() + 1; // 4 for April
+
+  const [year] = useState(currentYear);
+  const [month, setMonth] = useState(currentMonth);
+  const [availableMonths, setAvailableMonths] = useState([]);
   const [tempData, setTempData] = useState(null);
   const [mostBorrowed, setMostBorrowed] = useState([]);
   const [returnIssues, setReturnIssues] = useState([]);
@@ -24,6 +28,15 @@ export default function ProgressData() {
 
   const token = localStorage.getItem("token");
   const headers = { Authorization: `Bearer ${token}` };
+
+  // Generate months from January up to current month
+  useEffect(() => {
+    const months = [];
+    for (let i = 1; i <= currentMonth; i++) {
+      months.push(i);
+    }
+    setAvailableMonths(months);
+  }, [currentMonth]);
 
   const normalize = (data) => ({
     visitorDemographics: {
@@ -125,16 +138,16 @@ export default function ProgressData() {
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
 
-  const monthNames = ["January", "February", "March"];
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
   return (
     <div className="p-4 md:p-6 space-y-6">
       <Toaster position="top-right" />
 
-      {/* Month Selector */}
+      {/* Month Selector (only current year, no year navigation) */}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[#1B3A6B] font-semibold text-sm">Select Month:</span>
-        {[1, 2, 3].map((m) => (
+        {availableMonths.map((m) => (
           <button
             key={m}
             onClick={() => setMonth(m)}

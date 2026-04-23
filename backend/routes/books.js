@@ -85,7 +85,7 @@ router.get("/most-borrowed", async (req, res) => {
          },
          { $group: { _id: "$book", borrowCount: { $sum: 1 } } },
          { $sort: { borrowCount: -1 } },
-         { $limit: 5 },
+         { $limit: 10 },
          {
             $lookup: {
                from: "books",

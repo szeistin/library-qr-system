@@ -2,8 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Users, BookOpen, UserCheck, CheckCircle, QrCode, Hash, AlertCircle,
-  Clock, TrendingUp, Flame, Star, Bell, Menu, X, ChevronRight, LogOut,
-  LayoutDashboard, BookMarked, BarChart3, Smartphone
+  Clock, TrendingUp, Flame, Star, Bell
 } from "lucide-react";
 import { format } from "date-fns";
 import { Toaster, toast } from "sonner";
@@ -23,7 +22,6 @@ const AGE_COLORS = {
   PWD: "#E91E63",
 };
 
-// Mock peak hours data (replace with real hourly API later)
 const PEAK_HOURS_DATA = [
   { hour: "8 AM", today: 3, weekly: 2 },
   { hour: "9 AM", today: 8, weekly: 6 },
@@ -90,18 +88,31 @@ export default function AdminDashboard() {
   };
   const fetchTodayData = async () => {
     try {
-      const visitsRes = await fetch(`${API_URL}/visits/today`, { headers });
-      if (visitsRes.ok) setTodayRecords(await visitsRes.json());
+      const res = await fetch(`${API_URL}/visits/today`, { headers });
+      if (res.ok) setTodayRecords(await res.json());
     } catch (err) { console.error(err); }
   };
   const fetchDemographics = async () => {
     try {
-      const months = ["2026-01", "2026-02", "2026-03"];
+      const now = new Date();
+      const months = [];
+      for (let i = 2; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, "0");
+        months.push({ year, month, label: d.toLocaleString("default", { month: "short" }) });
+      }
       const data = [];
       for (const m of months) {
-        const [year, month] = m.split("-");
-        const res = await fetch(`${API_URL}/demographics/monthly/${year}/${month}`, { headers });
-        if (res.ok) data.push((await res.json())[0]);
+        const res = await fetch(`${API_URL}/demographics/monthly/${m.year}/${m.month}`, { headers });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.length > 0) {
+            data.push({ ...json[0], month: m.label });
+          } else {
+            data.push({ month: m.label, Children: 0, Adolescents: 0, "Young Adults": 0, Adults: 0, PWD: 0 });
+          }
+        }
       }
       setBarData(data);
     } catch (err) { console.error(err); }
@@ -146,7 +157,7 @@ export default function AdminDashboard() {
             const match = decodedText.match(/\/api\/visitors\/qr\/([a-f0-9]+)/);
             if (match) token = match[1];
             const now = Date.now();
-            if (token === lastScannedToken.current && now - lastScanTime.current < 2000) return;
+            if (token === lastScannedToken.current && now - lastScanTime.current < 3000) return;
             lastScannedToken.current = token;
             lastScanTime.current = now;
             handleCheckInOut(token);
@@ -172,30 +183,79 @@ export default function AdminDashboard() {
     };
   }, []);
 
+  // ---- Scan lock to prevent double processing ----
+  const scanLock = useRef(false);
+
   // ---- Check‑in/out (auto toggle) ----
   const handleCheckInOut = async (identifier) => {
-    if (!identifier) return;
+    if (!identifier || scanLock.current) return;
+
+    scanLock.current = true;
     setLoading(true);
+
     try {
-      const existing = activeVisitors.find(v => v.visitor.qr_token === identifier || v.visitor.reference_number === identifier);
-      const endpoint = existing ? "checkout" : "checkin";
-      const res = await fetch(`${API_URL}/visits/${endpoint}`, {
-        method: "POST", headers,
-        body: JSON.stringify({ qr_token: identifier, reference_number: identifier })
+      const isReference = identifier.startsWith("LIB-") || identifier.startsWith("REF-");
+      const body = isReference
+        ? { reference_number: identifier }
+        : { qr_token: identifier };
+
+      const res = await fetch(`${API_URL}/visits/scan`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
       });
-      const data = await res.json();
+
+      let data;
+      try {
+        data = await res.json();
+      } catch (e) {
+        const text = await res.text();
+        console.error("INVALID JSON:", text);
+        throw new Error("Server returned invalid JSON");
+      }
+
       if (!res.ok) throw new Error(data.error);
-      const visitorName = data.visit.visitor.name;
-      toast.success(existing ? `Checked out ${visitorName}` : `Checked in ${visitorName}`);
-      setScanResult({ type: "success", message: existing ? `Checked out ${visitorName}` : `Checked in ${visitorName}` });
-      await Promise.all([fetchActiveVisitors(), fetchStats(), fetchTodayData(), fetchPieData()]);
-      setScanInput("");
-      setAssistedRef("");
+
+      const visit = data.visit;
+      const action = data.action;
+      const visitorName = visit.visitor.name;
+
+      const message = action === "checkout"
+        ? `Checked out ${visitorName}`
+        : `Checked in ${visitorName}`;
+
+      toast.success(message);
+      setScanResult({ type: "success", message });
+
+      if (action === "checkout") {
+        setActiveVisitors((prev) => prev.filter((v) => v.visitor.qr_token !== visit.visitor.qr_token));
+      } else {
+        setActiveVisitors((prev) => [visit, ...prev]);
+      }
+
+      setTodayRecords((prev) => {
+        const index = prev.findIndex((r) => r._id === visit._id);
+        if (index !== -1) {
+          const updated = [...prev];
+          updated[index] = visit;
+          return updated;
+        }
+        return [visit, ...prev];
+      });
+
+      setTimeout(() => {
+        fetchActiveVisitors();
+        fetchStats();
+        fetchTodayData();
+        fetchPieData();
+      }, 500);
+
     } catch (err) {
       toast.error(err.message);
       setScanResult({ type: "error", message: err.message });
     } finally {
       setLoading(false);
+      setTimeout(() => (scanLock.current = false), 3000);
       setTimeout(() => setScanResult(null), 3000);
     }
   };
@@ -208,7 +268,7 @@ export default function AdminDashboard() {
     setTimeout(() => setAssistedResult(null), 3000);
   };
 
-  // Peak hours calculations (mock)
+  // Peak hours calculations
   const peakHour = PEAK_HOURS_DATA.reduce((a, b) => a.today > b.today ? a : b);
   const quietHour = PEAK_HOURS_DATA.reduce((a, b) => a.today < b.today ? a : b);
   const avgPerHour = Math.round(PEAK_HOURS_DATA.reduce((s, d) => s + d.today, 0) / PEAK_HOURS_DATA.length);
@@ -216,15 +276,17 @@ export default function AdminDashboard() {
   const loadLabel = currentLoad >= 12 ? "Busy" : currentLoad >= 7 ? "Moderate" : "Quiet";
   const loadColor = currentLoad >= 12 ? "text-red-600 bg-red-50" : currentLoad >= 7 ? "text-orange-500 bg-orange-50" : "text-green-600 bg-green-50";
 
+  const sortedTodayRecords = [...todayRecords].sort((a, b) => new Date(b.check_in_time) - new Date(a.check_in_time));
+
   return (
     <div className="p-4 md:p-6 space-y-5">
       <Toaster position="top-right" />
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      {/* Stats Cards (4 cards) */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { label: "Today's Visitors", value: stats.totalToday, icon: Users, badge: "bg-blue-100", iconColor: "text-blue-600" },
-          { label: "Checked In", value: stats.checkedIn, icon: UserCheck, badge: "bg-green-100", iconColor: "text-green-600" },
+          { label: "Currently In Library", value: stats.checkedIn, icon: UserCheck, badge: "bg-teal-100", iconColor: "text-teal-600" },
           { label: "Checked Out", value: stats.checkedOut, icon: CheckCircle, badge: "bg-purple-100", iconColor: "text-purple-600" },
           { label: "Active Borrows", value: stats.activeBorrows, icon: BookOpen, badge: "bg-orange-100", iconColor: "text-orange-600" },
         ].map(({ label, value, icon: Icon, badge, iconColor }) => (
@@ -236,6 +298,98 @@ export default function AdminDashboard() {
             <p className="text-gray-400 text-xs mt-0.5">{label}</p>
           </div>
         ))}
+      </div>
+
+      {/* QR Scanner + Assisted Check-in (moved above charts) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 bg-[#EBF0F7] rounded-xl flex items-center justify-center"><QrCode className="w-4 h-4 text-[#1B3A6B]" /></div>
+            <div><h3 className="text-[#1B3A6B] font-bold text-sm">QR Scanner</h3><p className="text-gray-400 text-xs">Check-In / Check-Out</p></div>
+          </div>
+          <div className="bg-gray-900 rounded-xl aspect-video overflow-hidden mb-3">
+            <div id="qr-reader-container" ref={scannerRef} className="w-full h-full"></div>
+          </div>
+          <div className="flex gap-2">
+            <input className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs" placeholder="Paste QR data to simulate scan..." value={scanInput} onChange={e => setScanInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleCheckInOut(scanInput)} />
+            <button onClick={() => { handleCheckInOut(scanInput); setScanInput(""); }} className="bg-[#1B3A6B] text-white px-4 py-2 rounded-xl text-xs font-semibold">Scan</button>
+          </div>
+          {scanResult && <div className={`mt-2 p-2.5 rounded-xl text-xs ${scanResult.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{scanResult.message}</div>}
+          <div className="mt-3">
+            <p className="text-xs text-gray-400 mb-2 font-semibold">REAL-TIME CHECK-INS TODAY</p>
+            <div className="space-y-1.5 max-h-36 overflow-y-auto">
+              {sortedTodayRecords.slice(0, 5).map(r => (
+                <div key={r._id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-1.5">
+                  <div>
+                    <p className="text-gray-700 text-xs font-semibold">{r.visitor.name}</p>
+                    <p className="text-gray-400 text-xs">{r.ageGroup} • {r.purpose}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {r.status === 'active' ? '● IN' : '○ OUT'}
+                    </span>
+                    <p className="text-gray-400 text-xs mt-0.5">
+                      {r.status === 'active'
+                        ? `In: ${new Date(r.check_in_time).toLocaleTimeString()}`
+                        : `Out: ${new Date(r.check_out_time || r.check_in_time).toLocaleTimeString()}`}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {sortedTodayRecords.length === 0 && <p className="text-gray-400 text-xs text-center py-3">No visitors yet today.</p>}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 bg-[#EBF0F7] rounded-xl flex items-center justify-center"><Hash className="w-4 h-4 text-[#1B3A6B]" /></div>
+            <div><h3 className="text-[#1B3A6B] font-bold text-sm">Assisted Check-In</h3><p className="text-gray-400 text-xs">For non-tech visitors / seniors</p></div>
+          </div>
+          <div className="bg-[#F0F4F8] rounded-xl p-3 mb-4 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 text-[#C9A227] mt-0.5" />
+            <p className="text-gray-600 text-xs">Enter the visitor's reference number from their phone.</p>
+          </div>
+          <input
+            className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm font-mono text-center uppercase"
+            placeholder="REF-0000 or LIB-..."
+            value={assistedRef}
+            onChange={e => setAssistedRef(e.target.value.toUpperCase())}
+            onKeyDown={e => e.key === "Enter" && handleAssistedCheckIn()}
+          />
+          <button onClick={handleAssistedCheckIn} className="w-full bg-[#C9A227] text-white py-2.5 rounded-xl text-sm font-semibold mt-2">
+            Process Check-In
+          </button>
+          {assistedResult && (
+            <div className={`mt-2 p-2.5 rounded-xl text-xs ${assistedResult.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+              {assistedResult.message}
+            </div>
+          )}
+          <div className="mt-4">
+            <p className="text-xs text-gray-400 mb-2 font-semibold">VISITOR LOG — {format(new Date(), "MMMM d")}</p>
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {sortedTodayRecords.map(r => (
+                <div key={r._id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
+                  <div>
+                    <p className="text-gray-700 text-xs font-semibold">{r.visitor.name}</p>
+                    <p className="text-gray-400 text-xs">{r.visitor.gender} • {r.age} yrs • {r.visitor.reference_number}</p>
+                  </div>
+                  <div className="flex flex-col items-end gap-1">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                      {r.status === 'active' ? 'IN' : 'OUT'}
+                    </span>
+                    {r.status === 'active' && (
+                      <button onClick={() => handleCheckInOut(r.visitor.qr_token)} className="text-xs text-red-500 underline">
+                        Check Out
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {sortedTodayRecords.length === 0 && <p className="text-gray-400 text-xs text-center py-3">No visitors logged today.</p>}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Charts row */}
@@ -303,7 +457,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Most Borrowed Books + Peak Hours (compact row) */}
+      {/* Most Borrowed Books + Peak Hours */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
           <div className="flex items-center gap-2 mb-3">
@@ -356,59 +510,6 @@ export default function AdminDashboard() {
             <span>Busy</span>
             <span>Moderate</span>
             <span>Quiet</span>
-          </div>
-        </div>
-      </div>
-
-      {/* QR Scanner + Assisted Check-in */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-[#EBF0F7] rounded-xl flex items-center justify-center"><QrCode className="w-4 h-4 text-[#1B3A6B]" /></div>
-            <div><h3 className="text-[#1B3A6B] font-bold text-sm">QR Scanner</h3><p className="text-gray-400 text-xs">Check-In / Check-Out</p></div>
-          </div>
-          <div className="bg-gray-900 rounded-xl aspect-video overflow-hidden mb-3">
-            <div id="qr-reader-container" ref={scannerRef} className="w-full h-full"></div>
-          </div>
-          <div className="flex gap-2">
-            <input className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs" placeholder="Paste QR data to simulate scan..." value={scanInput} onChange={e => setScanInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleCheckInOut(scanInput)} />
-            <button onClick={() => { handleCheckInOut(scanInput); setScanInput(""); }} className="bg-[#1B3A6B] text-white px-4 py-2 rounded-xl text-xs font-semibold">Scan</button>
-          </div>
-          {scanResult && <div className={`mt-2 p-2.5 rounded-xl text-xs ${scanResult.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{scanResult.message}</div>}
-          <div className="mt-3">
-            <p className="text-xs text-gray-400 mb-2 font-semibold">REAL-TIME CHECK-INS TODAY</p>
-            <div className="space-y-1.5 max-h-36 overflow-y-auto">
-              {todayRecords.slice(0, 5).map(r => (
-                <div key={r._id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-1.5">
-                  <div><p className="text-gray-700 text-xs font-semibold">{r.visitor.name}</p><p className="text-gray-400 text-xs">{r.visitor.ageGroup} • {r.purpose}</p></div>
-                  <div className="text-right"><span className={`text-xs px-2 py-0.5 rounded-full ${r.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>{r.status === "active" ? "● IN" : "○ OUT"}</span><p className="text-gray-400 text-xs mt-0.5">{new Date(r.check_in_time).toLocaleTimeString()}</p></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-[#EBF0F7] rounded-xl flex items-center justify-center"><Hash className="w-4 h-4 text-[#1B3A6B]" /></div>
-            <div><h3 className="text-[#1B3A6B] font-bold text-sm">Assisted Check-In</h3><p className="text-gray-400 text-xs">For non-tech visitors / seniors</p></div>
-          </div>
-          <div className="bg-[#F0F4F8] rounded-xl p-3 mb-4 flex items-start gap-2"><AlertCircle className="w-4 h-4 text-[#C9A227] mt-0.5" /><p className="text-gray-600 text-xs">Enter the visitor's reference number from their phone.</p></div>
-          <input className="w-full border border-gray-200 rounded-xl px-3 py-3 text-sm font-mono text-center uppercase" placeholder="REF-0000" value={assistedRef} onChange={e => setAssistedRef(e.target.value.toUpperCase())} onKeyDown={e => e.key === "Enter" && handleAssistedCheckIn()} />
-          <button onClick={handleAssistedCheckIn} className="w-full bg-[#C9A227] text-white py-2.5 rounded-xl text-sm font-semibold mt-2">Process Check-In</button>
-          {assistedResult && <div className={`mt-2 p-2.5 rounded-xl text-xs ${assistedResult.type === "success" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{assistedResult.message}</div>}
-          <div className="mt-4">
-            <p className="text-xs text-gray-400 mb-2 font-semibold">VISITOR LOG — {format(new Date(), "MMMM d")}</p>
-            <div className="space-y-1.5 max-h-48 overflow-y-auto">
-              {todayRecords.map(r => (
-                <div key={r._id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2">
-                  <div><p className="text-gray-700 text-xs font-semibold">{r.visitor.name}</p><p className="text-gray-400 text-xs">{r.visitor.gender} • {r.visitor.age} yrs • {r.visitor.reference_number}</p></div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>{r.status === "active" ? "IN" : "OUT"}</span>
-                    {r.status === "active" && <button onClick={() => handleCheckInOut(r.visitor.qr_token)} className="text-xs text-red-500 underline">Check Out</button>}
-                  </div>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </div>

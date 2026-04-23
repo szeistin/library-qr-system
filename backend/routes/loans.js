@@ -4,6 +4,7 @@ const Loan = require("../models/Loan");
 const Book = require("../models/Book");
 const Visitor = require("../models/Visitor");
 const { generateToken } = require("../utils/helpers");
+const { sendReminderEmail } = require("../utils/email");
 
 // Create a pending loan (visitor request)
 router.post("/borrow", async (req, res) => {
@@ -160,15 +161,29 @@ router.get("/visitor/:visitorId", async (req, res) => {
 
 // Send due date reminder (simulated)
 router.post("/:id/reminder", async (req, res) => {
+   console.log("Reminder route hit, loan ID:", req.params.id);
    try {
-      const loan = await Loan.findById(req.params.id);
+      const loan = await Loan.findById(req.params.id).populate("book", "title");
       if (!loan) return res.status(404).json({ error: "Loan not found" });
+      if (loan.reminder_sent)
+         return res.status(400).json({ error: "Reminder already sent" });
+
+      const dueDateStr = new Date(loan.due_date).toLocaleDateString("en-PH");
+      console.log(
+         "Attempting to send email to:",
+         loan.email,
+         "for book:",
+         loan.book.title,
+      );
+      await sendReminderEmail(loan.email, loan.book.title, dueDateStr);
+
       loan.reminder_sent = true;
       await loan.save();
-      res.json({ message: "Reminder sent (simulated)" });
+      console.log("Email sent successfully");
+      res.json({ message: "Reminder sent successfully" });
    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Server error" });
+      console.error("Error sending reminder:", err);
+      res.status(500).json({ error: "Failed to send email: " + err.message });
    }
 });
 
