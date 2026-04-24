@@ -13,38 +13,55 @@ import AdminDashboard from './pages/AdminDashboard';
 import Borrowing from './pages/Borrowing';
 import ProgressData from './pages/ProgressData';
 import VisitorMobilePass from './pages/VisitorMobilePass';
-import AdminLayout from './components/AdminLayout';
 import ManageBooks from './pages/ManageBooks';
+import AdminLayout from './components/AdminLayout';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
+  // Detect if running on Render (not localhost)
+  const isDeployed = window.location.hostname !== 'localhost' && !window.location.hostname.includes('127.0.0.1');
+
   return (
     <BrowserRouter>
       <Routes>
-        {/* Root - System Chooser */}
-        <Route path="/" element={<SystemChooser />} />
+        {isDeployed ? (
+          // On Render: mobile site at root, no system chooser
+          <Route path="/" element={<MobileLayout />}>
+            <Route index element={<Landing />} />
+            <Route path="checkin" element={<CheckInForm />} />
+            <Route path="qr-pass" element={<QRPass />} />
+            <Route path="home" element={<VisitorHome />} />
+            <Route path="borrow" element={<BorrowBooks />} />
+            <Route path="confirm-borrow" element={<ConfirmBorrow />} />
+            <Route path="borrow-success" element={<BorrowSuccess />} />
+          </Route>
+        ) : (
+          // Local development: system chooser at root
+          <Route path="/" element={<SystemChooser />} />
+        )}
 
-        {/* Mobile routes */}
-        <Route path="/mobile" element={<MobileLayout />}>
-          <Route index element={<Landing />} />
-          <Route path="checkin" element={<CheckInForm />} />
-          <Route path="qr-pass" element={<QRPass />} />
-          <Route path="home" element={<VisitorHome />} />
-          <Route path="borrow" element={<BorrowBooks />} />
-          <Route path="confirm-borrow" element={<ConfirmBorrow />} />
-          <Route path="borrow-success" element={<BorrowSuccess />} />
-        </Route>
+        {/* Mobile routes (always available under /mobile for both envs, but on Render root already handles them) */}
+        {!isDeployed && (
+          <Route path="/mobile" element={<MobileLayout />}>
+            <Route index element={<Landing />} />
+            <Route path="checkin" element={<CheckInForm />} />
+            <Route path="qr-pass" element={<QRPass />} />
+            <Route path="home" element={<VisitorHome />} />
+            <Route path="borrow" element={<BorrowBooks />} />
+            <Route path="confirm-borrow" element={<ConfirmBorrow />} />
+            <Route path="borrow-success" element={<BorrowSuccess />} />
+          </Route>
+        )}
 
-        {/* Admin login */}
+        {/* Admin routes (available everywhere, but on Render they will still work if you navigate to /admin) */}
         <Route path="/admin/login" element={<AdminLogin />} />
-
-        {/* Admin pages with layout (no ProtectedRoute) */}
         <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<AdminDashboard />} />
-          <Route path="dashboard" element={<AdminDashboard />} />
-          <Route path="borrowing" element={<Borrowing />} />
-          <Route path="books" element={<ManageBooks />} />
-          <Route path="progress" element={<ProgressData />} />
-          <Route path="visitor-pass" element={<VisitorMobilePass />} />
+          <Route index element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+          <Route path="dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+          <Route path="borrowing" element={<ProtectedRoute><Borrowing /></ProtectedRoute>} />
+          <Route path="progress" element={<ProtectedRoute><ProgressData /></ProtectedRoute>} />
+          <Route path="visitor-pass" element={<ProtectedRoute><VisitorMobilePass /></ProtectedRoute>} />
+          <Route path="books" element={<ProtectedRoute><ManageBooks /></ProtectedRoute>} />
         </Route>
       </Routes>
     </BrowserRouter>

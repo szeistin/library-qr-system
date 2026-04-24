@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-// @ts-ignore
 const Visitor = require('../models/Visitor');
 const { generateToken, generateReferenceNumber } = require('../utils/helpers');
 
@@ -21,7 +20,20 @@ router.post('/register', async (req, res) => {
       visitor = new Visitor({ name, address, dob, gender, course, school_work, profession, phone, email, qr_token, reference_number });
       await visitor.save();
     }
-    res.json({ id: visitor._id, name: visitor.name, qr_token: visitor.qr_token, reference_number: visitor.reference_number, phone: visitor.phone, email: visitor.email, qr_url: `${req.protocol}://${req.get('host')}/api/visitors/qr/${visitor.qr_token}` });
+
+    // Use x-forwarded-proto for HTTPS detection on Render
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const qr_url = `${protocol}://${req.get('host')}/api/visitors/qr/${visitor.qr_token}`;
+
+    res.json({
+      id: visitor._id,
+      name: visitor.name,
+      qr_token: visitor.qr_token,
+      reference_number: visitor.reference_number,
+      phone: visitor.phone,
+      email: visitor.email,
+      qr_url: qr_url,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -29,20 +41,16 @@ router.post('/register', async (req, res) => {
 });
 
 router.get('/qr/:token', async (req, res) => {
-  const visitor = await Visitor.findOne({ qr_token: req.params.token });
-  if (!visitor) return res.status(404).json({ error: 'Visitor not found' });
-  res.json(visitor);
-});
-// GET /api/visitors
-router.get('/', async (req, res) => {
   try {
-    const visitors = await Visitor.find().sort({ createdAt: -1 });
-    res.json(visitors);
+    const visitor = await Visitor.findOne({ qr_token: req.params.token });
+    if (!visitor) return res.status(404).json({ error: 'Visitor not found' });
+    res.json(visitor);
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
 });
-// GET /api/visitors - list all visitors
+
+// GET /api/visitors - list all visitors (single route)
 router.get('/', async (req, res) => {
   try {
     const visitors = await Visitor.find().sort({ createdAt: -1 });
@@ -52,4 +60,5 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: 'Server error' });
   }
 });
+
 module.exports = router;
