@@ -14,6 +14,7 @@ import Borrowing from './pages/Borrowing';
 import ProgressData from './pages/ProgressData';
 import VisitorMobilePass from './pages/VisitorMobilePass';
 import AdminLayout from './components/AdminLayout';
+import ManageBooks from './pages/ManageBooks';
 
 function App() {
   return (
@@ -41,6 +42,7 @@ function App() {
           <Route index element={<AdminDashboard />} />
           <Route path="dashboard" element={<AdminDashboard />} />
           <Route path="borrowing" element={<Borrowing />} />
+          <Route path="books" element={<ManageBooks />} />
           <Route path="progress" element={<ProgressData />} />
           <Route path="visitor-pass" element={<VisitorMobilePass />} />
         </Route>

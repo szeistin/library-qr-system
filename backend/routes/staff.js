@@ -46,6 +46,25 @@ router.post("/login", async (req, res) => {
    }
 });
 
+router.post("/verify-pin", async (req, res) => {
+   try {
+      const { pin } = req.body;
+      const token = req.headers.authorization?.split(" ")[1];
+      if (!token) return res.status(401).json({ error: "No token" });
+
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const staff = await Staff.findById(decoded.id);
+      if (!staff) return res.status(404).json({ error: "Staff not found" });
+
+      const isValid = await bcrypt.compare(pin, staff.pin_hash);
+      if (!isValid) return res.status(401).json({ error: "Invalid PIN" });
+
+      res.json({ message: "PIN verified" });
+   } catch (err) {
+      res.status(500).json({ error: "Server error" });
+   }
+});
+
 router.post("/logout", async (req, res) => {
    res.json({ message: "Logged out" });
 });

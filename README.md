@@ -38,16 +38,35 @@ A dual-interface web application for **Polangui Municipal Library** to modernize
 * Secure login (username + 4-digit PIN)
 
 * Real-time statistics:
-
   * Today’s visitors
-  * Checked-in / Checked-out
+  * Currently in library
+  * Checked out
   * Active borrows
 
-* QR Scanner (webcam-based)
+* QR Scanner (webcam-based, auto toggle)
 
 * Manual check-in via reference number
 
 * Active visitors list
+
+* **Manage Books** – full CRUD (add, edit, delete) with search and category filter; deletion prevented if book has active loans
+
+* **Borrowing Management**:
+  * Confirm Borrow QR (activate pending loans)
+  * Mark Returned (with optional damage/issues note)
+  * Mark Not Returned (lost item handling)
+  * Send Reminder (real email using Nodemailer)
+
+* **Reports & Analytics**:
+  * Visitor demographics charts (monthly bar, today’s pie)
+  * Monthly Progress Data (editable report)
+  * Export reports as PDF or DOC
+
+* Visitor Mobile Pass helper
+
+* Staff logs (placeholder module)
+
+* **PIN protection** for “Borrowing & Returning” and “Manage Books” (asked every time)
 
 ---
 
@@ -83,6 +102,7 @@ A dual-interface web application for **Polangui Municipal Library** to modernize
 * MongoDB Atlas → https://www.mongodb.com/cloud/atlas
 * Git (optional)
 * Webcam (for QR scanning)
+* Gmail account (for email reminders) – you will need to generate an **App Password**
 
 ---
 
@@ -113,6 +133,7 @@ npm install
 * bcryptjs
 * jsonwebtoken
 * qrcode
+* nodemailer
 * date-fns
 * nodemon (dev)
 
@@ -222,8 +243,9 @@ http://localhost:5173
 * Scan QR in admin dashboard
 * Borrow book and confirm loan
 * Return book with/without issues
-* Check Progress Data report
-* Export PDF / DOC
+* Click “Send Reminder” – an email will be sent to the borrower (if email configured)
+* Add, edit, or delete a book (Manage Books)
+* Check Progress Data report & Export PDF / DOC
 
 ---
 
