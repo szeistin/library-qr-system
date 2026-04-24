@@ -10,6 +10,8 @@ import {
 import QRCode from "qrcode";
 
 const API_URL = import.meta.env.VITE_API_URL;
+// Use environment variable for mobile URL, fallback to current origin/mobile
+const MOBILE_URL = import.meta.env.VITE_MOBILE_URL || `${window.location.origin}/mobile`;
 
 export default function VisitorMobilePass() {
    const [qrDataUrl, setQrDataUrl] = useState("");
@@ -18,10 +20,9 @@ export default function VisitorMobilePass() {
    const [todayCheckIns, setTodayCheckIns] = useState(0);
    const token = localStorage.getItem("token");
    const headers = { Authorization: `Bearer ${token}` };
-   const mobileUrl = `${window.location.origin}/mobile`;
 
    useEffect(() => {
-      QRCode.toDataURL(mobileUrl, (err, url) => {
+      QRCode.toDataURL(MOBILE_URL, (err, url) => {
          if (!err) setQrDataUrl(url);
       });
    }, []);
@@ -53,6 +54,13 @@ export default function VisitorMobilePass() {
          v.reference_number.toLowerCase().includes(searchTerm.toLowerCase()),
    );
 
+   // Format date
+   const formatDate = (dateStr) => {
+      if (!dateStr) return "—";
+      const d = new Date(dateStr);
+      return d.toLocaleDateString();
+   };
+
    return (
       <div className="p-4 md:p-6 space-y-5">
          {/* Hero Header */}
@@ -74,7 +82,7 @@ export default function VisitorMobilePass() {
                   </div>
                </div>
                <a
-                  href={mobileUrl}
+                  href={MOBILE_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="bg-white text-[#1B3A6B] px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-50 inline-flex items-center gap-1"
@@ -111,7 +119,7 @@ export default function VisitorMobilePass() {
                   </div>
                </div>
                <p className="text-gray-400 text-xs break-all text-center mt-2">
-                  {mobileUrl}
+                  {MOBILE_URL}
                </p>
                <div className="bg-[#F0F4F8] rounded-xl p-3 mt-3">
                   <p className="text-gray-500 text-xs font-semibold mb-1">
@@ -149,7 +157,7 @@ export default function VisitorMobilePass() {
                   </p>
                </div>
                <a
-                  href={`${mobileUrl}/checkin`}
+                  href={`${MOBILE_URL}/checkin`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full bg-[#1B3A6B] text-white py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2 mb-4"
@@ -206,27 +214,20 @@ export default function VisitorMobilePass() {
                         <th className="p-2 text-left">Name</th>
                         <th>Reference</th>
                         <th>Profession</th>
-                        <th>Library Card</th>
-                        <th>Last Purpose</th>
+                        <th>Registered On</th>
                      </tr>
                   </thead>
                   <tbody>
                      {filteredVisitors.length === 0 ? (
                         <tr>
-                           <td
-                              colSpan={5}
-                              className="text-center py-8 text-gray-400"
-                           >
+                           <td colSpan={4} className="text-center py-8 text-gray-400">
                               <Users className="w-12 h-12 mx-auto opacity-30 mb-2" />
                               <p>No visitors registered yet.</p>
-                           </td>
-                        </tr>
+                            </td>
+                         </tr>
                      ) : (
                         filteredVisitors.map((v) => (
-                           <tr
-                              key={v._id}
-                              className="border-b hover:bg-gray-50"
-                           >
+                           <tr key={v._id} className="border-b hover:bg-gray-50">
                               <td className="p-2">
                                  <span className="font-semibold text-gray-800">
                                     {v.name}
@@ -239,12 +240,7 @@ export default function VisitorMobilePass() {
                                  {v.reference_number}
                               </td>
                               <td className="p-2">{v.profession || "—"}</td>
-                              <td className="p-2">
-                                 <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-[11px]">
-                                    ✓ Yes
-                                 </span>
-                              </td>
-                              <td className="p-2">{v.purpose || "—"}</td>
+                              <td className="p-2">{formatDate(v.createdAt)}</td>
                            </tr>
                         ))
                      )}
