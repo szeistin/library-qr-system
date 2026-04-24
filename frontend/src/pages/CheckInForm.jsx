@@ -8,6 +8,47 @@ import {
 const professionOptions = ["Student", "Teacher", "Government Employee", "Private Employee", "Self-Employed", "Retired", "Other"];
 const purposeOptions = ["Study / Research", "Read Books", "Borrow Books", "Attend Event", "Use Computer", "Other"];
 
+// Auto-format date input as MM/DD/YYYY
+function formatDateInput(value) {
+  // Remove non-digits
+  const digits = value.replace(/\D/g, '');
+  if (digits.length === 0) return '';
+  let formatted = '';
+  if (digits.length <= 2) {
+    formatted = digits;
+  } else if (digits.length <= 4) {
+    formatted = digits.slice(0,2) + '/' + digits.slice(2);
+  } else {
+    formatted = digits.slice(0,2) + '/' + digits.slice(2,4) + '/' + digits.slice(4,8);
+  }
+  return formatted;
+}
+
+// Convert MM/DD/YYYY to YYYY-MM-DD
+function toISOFormat(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('/');
+  if (parts.length === 3) {
+    let month = parts[0].padStart(2,'0');
+    let day = parts[1].padStart(2,'0');
+    let year = parts[2];
+    if (year.length === 4 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year}-${month}-${day}`;
+    }
+  }
+  return '';
+}
+
+// Convert YYYY-MM-DD to MM/DD/YYYY for display
+function toDisplayFormat(dateStr) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[1]}/${parts[2]}/${parts[0]}`;
+  }
+  return dateStr;
+}
+
 export default function CheckInForm() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -21,32 +62,42 @@ export default function CheckInForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
+  const [displayDob, setDisplayDob] = useState("");
 
- useEffect(() => {
-  const stored = localStorage.getItem("visitor");
-  if (stored) {
-    const visitor = JSON.parse(stored);
-    setFormData({
-      name: visitor.name || "",
-      address: visitor.address || "",
-      dob: visitor.dob ? visitor.dob.split("T")[0] : "",
-      gender: visitor.gender || "",
-      course: visitor.course || "",
-      school_work: visitor.school_work || "",
-      profession: visitor.profession || "",
-      purpose: visitor.purpose || "",
-    });
-    if (visitor.purpose && !purposeOptions.includes(visitor.purpose)) {
-      setCustomPurpose(visitor.purpose);
+  // Pre‑fill form from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem("visitor");
+    if (stored) {
+      const visitor = JSON.parse(stored);
+      setFormData({
+        name: visitor.name || "",
+        address: visitor.address || "",
+        dob: visitor.dob ? visitor.dob.split("T")[0] : "",
+        gender: visitor.gender || "",
+        course: visitor.course || "",
+        school_work: visitor.school_work || "",
+        profession: visitor.profession || "",
+        purpose: visitor.purpose || "",
+      });
+      if (visitor.dob) {
+        setDisplayDob(toDisplayFormat(visitor.dob.split("T")[0]));
+      }
+      if (visitor.purpose && !purposeOptions.includes(visitor.purpose)) {
+        setCustomPurpose(visitor.purpose);
+      }
     }
-  }
-}, []); // No dependency on editMode
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "purpose") {
       setFormData({ ...formData, purpose: value });
       if (value !== "Other") setCustomPurpose("");
+    } else if (name === "dob") {
+      const formatted = formatDateInput(value);
+      setDisplayDob(formatted);
+      const iso = toISOFormat(formatted);
+      setFormData({ ...formData, dob: iso });
     } else {
       setFormData({ ...formData, [name]: value });
     }
@@ -56,7 +107,7 @@ export default function CheckInForm() {
   const validate = () => {
     const errors = {};
     if (!formData.name.trim()) errors.name = "Required";
-    if (!formData.dob) errors.dob = "Required";
+    if (!formData.dob) errors.dob = "Required (MM/DD/YYYY)";
     if (!formData.gender) errors.gender = "Required";
     if (!formData.profession) errors.profession = "Required";
     if (!formData.purpose) errors.purpose = "Required";
@@ -143,7 +194,14 @@ export default function CheckInForm() {
             <label className="flex items-center gap-1 text-xs text-gray-600 font-semibold uppercase tracking-wide mb-1">
               <Calendar className="w-3 h-3" /> Date of Birth *
             </label>
-            <input type="date" name="dob" value={formData.dob} onChange={handleChange} className={inputClass("dob")} />
+            <input
+              type="text"
+              name="dob"
+              value={displayDob}
+              onChange={handleChange}
+              placeholder="MM/DD/YYYY"
+              className={inputClass("dob")}
+            />
             {fieldErrors.dob && <p className="text-red-500 text-xs mt-0.5">{fieldErrors.dob}</p>}
           </div>
           <div>
