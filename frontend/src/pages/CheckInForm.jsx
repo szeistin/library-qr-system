@@ -22,27 +22,25 @@ export default function CheckInForm() {
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
 
-  useEffect(() => {
-    if (editMode) {
-      const stored = localStorage.getItem("visitor");
-      if (stored) {
-        const visitor = JSON.parse(stored);
-        setFormData({
-          name: visitor.name || "",
-          address: visitor.address || "",
-          dob: visitor.dob ? visitor.dob.split("T")[0] : "",
-          gender: visitor.gender || "",
-          course: visitor.course || "",
-          school_work: visitor.school_work || "",
-          profession: visitor.profession || "",
-          purpose: visitor.purpose || "",
-        });
-        if (visitor.purpose && !purposeOptions.includes(visitor.purpose)) {
-          setCustomPurpose(visitor.purpose);
-        }
-      }
+ useEffect(() => {
+  const stored = localStorage.getItem("visitor");
+  if (stored) {
+    const visitor = JSON.parse(stored);
+    setFormData({
+      name: visitor.name || "",
+      address: visitor.address || "",
+      dob: visitor.dob ? visitor.dob.split("T")[0] : "",
+      gender: visitor.gender || "",
+      course: visitor.course || "",
+      school_work: visitor.school_work || "",
+      profession: visitor.profession || "",
+      purpose: visitor.purpose || "",
+    });
+    if (visitor.purpose && !purposeOptions.includes(visitor.purpose)) {
+      setCustomPurpose(visitor.purpose);
     }
-  }, [editMode]);
+  }
+}, []); // No dependency on editMode
 
   const handleChange = (e) => {
     const { name, value } = e.target;

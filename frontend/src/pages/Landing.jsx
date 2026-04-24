@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import { Users, Library, Clock, ChevronRight } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { BookOpen, Users, Library, ChevronRight, Clock } from "lucide-react";
 import logo from "../assets/logo.png";
 
 export default function Landing() {
+   const navigate = useNavigate();
    const [stats, setStats] = useState({
       visitorsToday: 0,
       availableBooks: 0,
@@ -11,6 +12,12 @@ export default function Landing() {
    });
 
    useEffect(() => {
+      // Check if visitor already has stored data
+      const stored = localStorage.getItem("visitor");
+      if (stored) {
+         navigate("/mobile/home", { replace: true });
+         return;
+      }
       fetch(`${import.meta.env.VITE_API_URL}/stats`)
          .then((res) => res.json())
          .then((data) =>
@@ -21,7 +28,7 @@ export default function Landing() {
             })),
          )
          .catch((err) => console.error(err));
-   }, []);
+   }, [navigate]);
 
    return (
       <>
