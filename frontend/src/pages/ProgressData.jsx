@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BarChart3, FileText, File, AlertTriangle } from "lucide-react";
+import { FileText, File, AlertTriangle } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import html2pdf from "html2pdf.js";
 import { saveAs } from "file-saver";
@@ -15,8 +15,8 @@ const defaultDemographics = {
 };
 
 export default function ProgressData() {
-  const currentYear = new Date().getFullYear(); // 2026
-  const currentMonth = new Date().getMonth() + 1; // 4 for April
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
 
   const [year] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
@@ -67,7 +67,7 @@ export default function ProgressData() {
 
   const fetchReturnIssues = async () => {
     try {
-      const res = await fetch(`${API_URL}/loans/returned-issues`, { headers });
+      const res = await fetch(`${API_URL}/loans/returned-issues?month=${month}&year=${year}`, { headers });
       const data = res.ok ? await res.json() : [];
       setReturnIssues(data || []);
     } catch {
@@ -136,6 +136,13 @@ export default function ProgressData() {
   );
   const grandTotal = totals.male + totals.female;
 
+  // Calculate count of issues per book title (for the additional column)
+  const issueCountPerTitle = {};
+  returnIssues.forEach(loan => {
+    const title = loan.book?.title || "Unknown";
+    issueCountPerTitle[title] = (issueCountPerTitle[title] || 0) + 1;
+  });
+
   if (loading) return <div className="p-8 text-center">Loading...</div>;
 
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -144,7 +151,7 @@ export default function ProgressData() {
     <div className="p-4 md:p-6 space-y-6">
       <Toaster position="top-right" />
 
-      {/* Month Selector (only current year, no year navigation) */}
+      {/* Month Selector */}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-[#1B3A6B] font-semibold text-sm">Select Month:</span>
         {availableMonths.map((m) => (
@@ -226,7 +233,7 @@ export default function ProgressData() {
               )}
               {mostBorrowed.length > 0 && (
                 <tr className="bg-[#1B3A6B] text-white">
-                  <td colSpan={4} className="border border-blue-900 p-2 font-bold">TOTAL BOOKS BORROWED</td>
+                  <td colSpan={4} className="border border-blue-900 p-2 font-bold">TOTAL OF BOOKS BORROWED</td>
                   <td className="border border-blue-900 p-2 text-center gold-text font-bold">
                     {mostBorrowed.reduce((sum, b) => sum + (b.borrowCount || 0), 0)}
                   </td>
@@ -236,13 +243,13 @@ export default function ProgressData() {
           </table>
         </div>
 
-        {/* Books with Return Issues (Conditional) */}
+        {/* Books with Return Issues - Detailed list with count per title */}
         {returnIssues.length > 0 && (
           <div>
             <div className="flex items-center gap-2 mb-3">
               <AlertTriangle className="w-5 h-5 text-orange-500" />
               <h3 className="text-[#1B3A6B] font-bold text-base">Books with Return Issues</h3>
-              <p className="text-gray-400 text-xs">Books returned with damage or conditions noted</p>
+              <p className="text-gray-400 text-xs">Detailed list of returned books with damage or conditions noted</p>
             </div>
             <table className="w-full text-xs border-collapse report-table">
               <thead>
@@ -250,20 +257,32 @@ export default function ProgressData() {
                   <th className="border border-orange-200 p-2">Book Title</th>
                   <th className="border border-orange-200 p-2">Author</th>
                   <th className="border border-orange-200 p-2">Issue Reported</th>
+                  <th className="border border-orange-200 p-2">Copies with Issues (this title)</th>
                 </tr>
               </thead>
               <tbody>
-                {returnIssues.map((loan, idx) => (
-                  <tr key={loan._id} className={idx % 2 === 0 ? "bg-white" : "bg-orange-50"}>
-                    <td className="border border-gray-200 p-2">{loan.book?.title || "Unknown"}</td>
-                    <td className="border border-gray-200 p-2">{loan.book?.author || "Unknown"}</td>
-                    <td className="border border-gray-200 p-2 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3 text-orange-500" />
-                      {loan.return_issues}
-                    </td>
-                  </tr>
-                ))}
+                {returnIssues.map((loan, idx) => {
+                  const title = loan.book?.title || "Unknown";
+                  const countForTitle = issueCountPerTitle[title] || 0;
+                  return (
+                    <tr key={loan._id} className={idx % 2 === 0 ? "bg-white" : "bg-orange-50"}>
+                      <td className="border border-gray-200 p-2">{title}</td>
+                      <td className="border border-gray-200 p-2">{loan.book?.author || "Unknown"}</td>
+                      <td className="border border-gray-200 p-2 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 text-orange-500" />
+                        {loan.return_issues}
+                      </td>
+                      <td className="border border-gray-200 p-2 text-center font-bold">{countForTitle}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
+              <tfoot>
+                <tr className="bg-orange-200">
+                  <td colSpan="3" className="border border-orange-300 p-2 font-bold text-right">Total Books (copies) with Issues:</td>
+                  <td className="border border-orange-300 p-2 text-center font-bold">{returnIssues.length}</td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}

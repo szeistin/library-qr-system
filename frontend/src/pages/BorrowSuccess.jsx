@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import QRCode from "qrcode";
-import { Download, Home, BookOpen, Calendar, Hash, CheckCircle } from "lucide-react";
+import { Download, Home, BookOpen, Calendar, Hash, CheckCircle, Copy } from "lucide-react";
+import { toast } from "sonner";
 
 export default function BorrowSuccess() {
   const [borrowInfo, setBorrowInfo] = useState(null);
@@ -26,6 +27,13 @@ export default function BorrowSuccess() {
     link.download = "borrow_qr.png";
     link.href = qrDataUrl;
     link.click();
+  };
+
+  const copyFullToken = () => {
+    if (borrowInfo?.borrow_qr_token) {
+      navigator.clipboard.writeText(borrowInfo.borrow_qr_token);
+      toast.success("Full token copied to clipboard");
+    }
   };
 
   if (!borrowInfo) return <div className="p-4 text-center">Loading...</div>;
@@ -85,15 +93,17 @@ export default function BorrowSuccess() {
               </div>
             </div>
 
-            <div className="bg-[#1B3A6B] rounded-xl p-3 flex justify-between items-center">
-              <div>
+            <div className="bg-[#1B3A6B] rounded-xl p-3 space-y-2">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1">
                   <Hash className="w-4 h-4 text-[#C9A227]" />
-                  <p className="text-blue-200 text-xs">Borrow ID</p>
+                  <p className="text-blue-200 text-xs">Borrow Token (full)</p>
                 </div>
-                <p className="text-white font-bold text-sm tracking-wide">{borrowInfo.borrow_qr_token.slice(0, 8)}</p>
+                <button onClick={copyFullToken} className="text-white bg-blue-700 rounded-lg px-2 py-1 text-xs flex items-center gap-1">
+                  <Copy className="w-3 h-3" /> Copy
+                </button>
               </div>
-              <p className="text-white text-xs font-semibold">{borrowInfo.book.borrowerName || "Visitor"}</p>
+              <p className="text-white font-mono text-xs break-all">{borrowInfo.borrow_qr_token}</p>
             </div>
           </div>
         </div>

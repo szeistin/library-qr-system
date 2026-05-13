@@ -9,6 +9,7 @@ import {
    ChevronRight,
    ChevronDown,
    CheckCircle,
+   LogOut,
 } from "lucide-react";
 import { getVisitorLoans } from "../api/api";
 
@@ -61,6 +62,11 @@ export default function VisitorHome() {
       }
    }, [visitor]);
 
+   const handleSignOut = () => {
+      localStorage.removeItem("visitor");
+      navigate("/");
+   };
+
    if (!visitor) return <div className="p-4 text-center">Loading...</div>;
 
    const age = visitor.dob
@@ -91,14 +97,22 @@ export default function VisitorHome() {
                      </p>
                   </div>
                </div>
-               <button
-                  onClick={() =>
-                     navigate("/mobile/checkin", { state: { editMode: true } })
-                  }
-                  className="bg-white/10 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1"
-               >
-                  <Edit3 className="w-3 h-3" /> Edit Info
-               </button>
+               <div className="flex gap-2">
+                  <button
+                     onClick={() =>
+                        navigate("/mobile/checkin", { state: { editMode: true } })
+                     }
+                     className="bg-white/10 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1"
+                  >
+                     <Edit3 className="w-3 h-3" /> Edit Info
+                  </button>
+                  <button
+                     onClick={handleSignOut}
+                     className="bg-red-500/80 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1"
+                  >
+                     <LogOut className="w-3 h-3" /> Sign Out
+                  </button>
+               </div>
             </div>
             <div className="flex gap-2 mt-3">
                <span className="bg-[#C9A227] text-white text-xs px-2 py-1 rounded-lg">
@@ -110,6 +124,7 @@ export default function VisitorHome() {
             </div>
          </div>
 
+         {/* Rest of your component unchanged */}
          <div className="px-4 py-4 space-y-4">
             {/* Expandable QR Visitor Pass Card */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -173,11 +188,16 @@ export default function VisitorHome() {
                </div>
             </Link>
 
-            {/* Borrowing History Section (full history) */}
+            {/* Borrowing History Section (limit 3, with "View Full History" button) */}
             <div>
-               <h3 className="text-sm font-bold text-[#1B3A6B] mb-2">
-                  Your borrowed book/s
-               </h3>
+               <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-sm font-bold text-[#1B3A6B]">
+                     Your borrowed books
+                  </h3>
+                  <Link to="/mobile/history" className="text-xs text-primary">
+                     View Full History →
+                  </Link>
+               </div>
                {loadingLoans ? (
                   <div className="text-center text-gray-400 text-sm">
                      Loading your history...
@@ -188,7 +208,7 @@ export default function VisitorHome() {
                   </div>
                ) : (
                   <div className="space-y-2">
-                     {borrowedBooks.map((loan) => {
+                     {borrowedBooks.slice(0, 3).map((loan) => {
                         const due = new Date(loan.due_date);
                         const today = new Date();
                         let statusText = "";
@@ -250,6 +270,16 @@ export default function VisitorHome() {
                            </div>
                         );
                      })}
+                     {borrowedBooks.length > 3 && (
+                        <div className="text-center pt-1">
+                           <Link
+                              to="/mobile/history"
+                              className="text-xs text-primary underline"
+                           >
+                              + {borrowedBooks.length - 3} more
+                           </Link>
+                        </div>
+                     )}
                   </div>
                )}
             </div>

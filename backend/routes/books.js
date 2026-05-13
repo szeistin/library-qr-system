@@ -77,15 +77,10 @@ router.get("/most-borrowed", async (req, res) => {
       const startDate = new Date(year, month - 1, 1);
       const endDate = new Date(year, month, 0);
       const pipeline = [
-         {
-            $match: {
-               borrow_date: { $gte: startDate, $lte: endDate },
-               status: "borrowed",
-            },
-         },
+         { $match: { borrow_date: { $gte: startDate, $lte: endDate } } }, // no status filter
          { $group: { _id: "$book", borrowCount: { $sum: 1 } } },
          { $sort: { borrowCount: -1 } },
-         { $limit: 10 },
+         { $limit: 5 },
          {
             $lookup: {
                from: "books",
@@ -111,6 +106,7 @@ router.get("/most-borrowed", async (req, res) => {
       res.status(500).json({ error: "Server error" });
    }
 });
+
 // GET /api/books - list all books
 router.get("/", async (req, res) => {
    try {

@@ -8,6 +8,7 @@ import VisitorHome from './pages/VisitorHome';
 import BorrowBooks from './pages/BorrowBooks';
 import ConfirmBorrow from './pages/ConfirmBorrow';
 import BorrowSuccess from './pages/BorrowSuccess';
+import LoanHistory from './pages/LoanHistory';
 import AdminLogin from './pages/AdminLogin';
 import AdminDashboard from './pages/AdminDashboard';
 import Borrowing from './pages/Borrowing';
@@ -40,6 +41,7 @@ function App() {
           <Route path="borrow" element={<BorrowBooks />} />
           <Route path="confirm-borrow" element={<ConfirmBorrow />} />
           <Route path="borrow-success" element={<BorrowSuccess />} />
+          <Route path="history" element={<LoanHistory />} />
         </Route>
 
         {/* Admin routes (unchanged) */}

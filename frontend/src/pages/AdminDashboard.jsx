@@ -4,7 +4,7 @@ import {
   Users, BookOpen, UserCheck, CheckCircle, QrCode, Hash, AlertCircle,
   Clock, TrendingUp, Flame, Star, Bell
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, isSameDay, startOfToday } from "date-fns";
 import { Toaster, toast } from "sonner";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -73,6 +73,12 @@ export default function AdminDashboard() {
   const token = localStorage.getItem("token");
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
+  // ---- Helper: filter active visitors to only those who checked in today ----
+  const filterTodayActiveVisitors = (visitors) => {
+    const today = startOfToday();
+    return visitors.filter(v => isSameDay(new Date(v.check_in_time), today));
+  };
+
   // ---- Data fetching ----
   const fetchStats = async () => {
     try {
@@ -83,7 +89,12 @@ export default function AdminDashboard() {
   const fetchActiveVisitors = async () => {
     try {
       const res = await fetch(`${API_URL}/visits/active`, { headers });
-      if (res.ok) setActiveVisitors(await res.json());
+      if (res.ok) {
+        const allActive = await res.json();
+        // Keep only visitors who checked in today (forget yesterday's stragglers)
+        const todayActive = filterTodayActiveVisitors(allActive);
+        setActiveVisitors(todayActive);
+      }
     } catch (err) { console.error(err); }
   };
   const fetchTodayData = async () => {
@@ -141,6 +152,11 @@ export default function AdminDashboard() {
     fetchPieData();
     fetchMostBorrowed();
   }, []);
+
+  // Recompute daily stats from filtered data
+  const todayActiveCount = activeVisitors.length;
+  const todayCheckedOutCount = todayRecords.filter(r => r.status === "completed" && r.check_out_time && isSameDay(new Date(r.check_out_time), new Date())).length;
+  const totalTodayVisitors = todayRecords.length;
 
   // ---- QR Scanner (auto start, mirrored) ----
   useEffect(() => {
@@ -282,12 +298,12 @@ export default function AdminDashboard() {
     <div className="p-4 md:p-6 space-y-5">
       <Toaster position="top-right" />
 
-      {/* Stats Cards (4 cards) */}
+      {/* Stats Cards – using filtered daily numbers */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
-          { label: "Today's Visitors", value: stats.totalToday, icon: Users, badge: "bg-blue-100", iconColor: "text-blue-600" },
-          { label: "Currently In Library", value: stats.checkedIn, icon: UserCheck, badge: "bg-teal-100", iconColor: "text-teal-600" },
-          { label: "Checked Out", value: stats.checkedOut, icon: CheckCircle, badge: "bg-purple-100", iconColor: "text-purple-600" },
+          { label: "Today's Visitors", value: totalTodayVisitors, icon: Users, badge: "bg-blue-100", iconColor: "text-blue-600" },
+          { label: "Currently In Library", value: todayActiveCount, icon: UserCheck, badge: "bg-teal-100", iconColor: "text-teal-600" },
+          { label: "Checked Out", value: todayCheckedOutCount, icon: CheckCircle, badge: "bg-purple-100", iconColor: "text-purple-600" },
           { label: "Active Borrows", value: stats.activeBorrows, icon: BookOpen, badge: "bg-orange-100", iconColor: "text-orange-600" },
         ].map(({ label, value, icon: Icon, badge, iconColor }) => (
           <div key={label} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
@@ -300,7 +316,7 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* QR Scanner + Assisted Check-in (moved above charts) */}
+      {/* QR Scanner + Assisted Check-in (same as before) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <div className="flex items-center gap-2 mb-4">
@@ -392,7 +408,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Charts row */}
+      {/* Charts row – unchanged (already use today’s data) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2 bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <div className="flex items-center justify-between mb-4">

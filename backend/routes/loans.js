@@ -41,25 +41,22 @@ router.post("/borrow", async (req, res) => {
    }
 });
 
-// Confirm pending loan (admin scans borrow QR)
 router.post("/confirm/:token", async (req, res) => {
    try {
       const { token } = req.params;
-      const loan = await Loan.findOne({
-         borrow_qr_token: token,
-         status: "pending",
-      });
-      if (!loan)
-         return res
-            .status(404)
-            .json({ error: "Loan not found or already confirmed" });
+      const loan = await Loan.findOne({ borrow_qr_token: token, status: "pending" });
+      if (!loan) return res.status(404).json({ error: "Loan not found or already confirmed" });
 
       loan.status = "borrowed";
       await loan.save();
 
+      // Recalculate available copies based on active loans
+      const activeCount = await Loan.countDocuments({ book: loan.book, status: "borrowed" });
       const book = await Book.findById(loan.book);
-      book.available_copies -= 1;
-      await book.save();
+      if (book) {
+         book.available_copies = Math.max(0, book.total_copies - activeCount);
+         await book.save();
+      }
 
       res.json({ message: "Loan confirmed successfully" });
    } catch (err) {
@@ -68,24 +65,25 @@ router.post("/confirm/:token", async (req, res) => {
    }
 });
 
-// Return a book (with optional issues)
+// Return a book (with optional issues) -> book becomes available again
 router.post("/return", async (req, res) => {
    try {
       const { borrow_qr_token, issues } = req.body;
       const loan = await Loan.findOne({ borrow_qr_token, status: "borrowed" });
-      if (!loan)
-         return res
-            .status(404)
-            .json({ error: "Loan not found or already returned" });
+      if (!loan) return res.status(404).json({ error: "Loan not found or already returned" });
 
       loan.status = "returned";
       loan.return_date = new Date();
       loan.return_issues = issues || "";
       await loan.save();
 
+      // Recalculate available copies
+      const activeCount = await Loan.countDocuments({ book: loan.book, status: "borrowed" });
       const book = await Book.findById(loan.book);
-      book.available_copies += 1;
-      await book.save();
+      if (book) {
+         book.available_copies = Math.max(0, book.total_copies - activeCount);
+         await book.save();
+      }
 
       res.json({ message: "Book returned successfully" });
    } catch (err) {
@@ -93,23 +91,18 @@ router.post("/return", async (req, res) => {
       res.status(500).json({ error: "Server error" });
    }
 });
-// POST /api/loans/not-returned/:token
-// POST /api/loans/not-returned/:token
+
+// Mark as not returned (book is lost or not physically returned) -> no change to available_copies
 router.post("/not-returned/:token", async (req, res) => {
    try {
       const { token } = req.params;
-      const loan = await Loan.findOne({
-         borrow_qr_token: token,
-         status: "borrowed",
-      });
-      if (!loan)
-         return res
-            .status(404)
-            .json({ error: "Loan not found or already processed" });
+      const loan = await Loan.findOne({ borrow_qr_token: token, status: "borrowed" });
+      if (!loan) return res.status(404).json({ error: "Loan not found" });
+
       loan.status = "not_returned";
       loan.return_issues = "Not returned";
       await loan.save();
-      // Do NOT increase book's available copies
+      // Do NOT change available_copies – the book is gone
       res.json({ message: "Book marked as not returned" });
    } catch (err) {
       console.error(err);
@@ -190,9 +183,12 @@ router.post("/:id/reminder", async (req, res) => {
 // GET /api/loans/returned-issues
 router.get("/returned-issues", async (req, res) => {
    try {
+      const { month, year } = req.query;
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
       const loansWithIssues = await Loan.find({
          return_issues: { $ne: "", $exists: true },
-         status: { $in: ["returned", "not_returned"] },
+         return_date: { $gte: startDate, $lte: endDate },
       }).populate("book", "title author");
       res.json(loansWithIssues);
    } catch (err) {
@@ -200,4 +196,49 @@ router.get("/returned-issues", async (req, res) => {
       res.status(500).json({ error: "Server error" });
    }
 });
+
+// GET /api/loans/history
+router.get("/history", async (req, res) => {
+   try {
+      const loans = await Loan.find({ status: { $ne: "borrowed" } })
+         .populate("visitor", "name")
+         .populate("book", "title author")
+         .sort({ return_date: -1, borrow_date: -1 });
+      res.json(loans);
+   } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+   }
+});
+
+// POST /api/loans/retrieve/:id
+// When retrieving a loan from history back to active loans,
+// we set status to 'borrowed', clear return fields, and DECREASE available_copies
+// because the book is now borrowed again.
+router.post("/retrieve/:id", async (req, res) => {
+   try {
+      const loan = await Loan.findById(req.params.id);
+      if (!loan) return res.status(404).json({ error: "Loan not found" });
+      if (loan.status === "borrowed") return res.status(400).json({ error: "Already active" });
+
+      loan.status = "borrowed";
+      loan.return_date = null;
+      loan.return_issues = "";
+      await loan.save();
+
+      // Recalculate available copies
+      const activeCount = await Loan.countDocuments({ book: loan.book, status: "borrowed" });
+      const book = await Book.findById(loan.book);
+      if (book) {
+         book.available_copies = Math.max(0, book.total_copies - activeCount);
+         await book.save();
+      }
+
+      res.json({ message: "Loan retrieved back to active", loan });
+   } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Server error" });
+   }
+});
+
 module.exports = router;
