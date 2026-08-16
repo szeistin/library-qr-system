@@ -33,10 +33,12 @@ export default function ManageBooks() {
          if (res.ok) {
             const data = await res.json();
             setBooks(data);
-            // Extract unique categories
+            
+            // Extract unique categories and sort them A-Z
             const uniqueCategories = [
                ...new Set(data.map((b) => b.category).filter((c) => c)),
-            ];
+            ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+            
             setCategories(uniqueCategories);
          } else {
             toast.error("Failed to load books");
@@ -53,16 +55,32 @@ export default function ManageBooks() {
       fetchBooks();
    }, []);
 
-   // Filter books based on search and category
-   const filteredBooks = books.filter((book) => {
-      const matchesSearch =
-         searchTerm === "" ||
-         book.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-         book.author.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesCategory =
-         selectedCategory === "" || book.category === selectedCategory;
-      return matchesSearch && matchesCategory;
-   });
+   // Filter books based on search/category AND sort by Category A-Z, then Title A-Z
+   const filteredBooks = books
+      .filter((book) => {
+         const matchesSearch =
+            searchTerm === "" ||
+            book.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            book.author.toLowerCase().includes(searchTerm.toLowerCase());
+         const matchesCategory =
+            selectedCategory === "" || book.category === selectedCategory;
+         return matchesSearch && matchesCategory;
+      })
+      .sort((a, b) => {
+         // Primary Sort: Category (A-Z)
+         const catA = a.category || "";
+         const catB = b.category || "";
+         const categoryComparison = catA.localeCompare(catB, undefined, { sensitivity: "base" });
+
+         if (categoryComparison !== 0) {
+            return categoryComparison;
+         }
+
+         // Secondary Sort: Title (A-Z) within the same category
+         const titleA = a.title || "";
+         const titleB = b.title || "";
+         return titleA.localeCompare(titleB, undefined, { sensitivity: "base" });
+      });
 
    const handleOpenModal = (book = null) => {
       if (book) {
@@ -255,7 +273,7 @@ export default function ManageBooks() {
             </table>
          </div>
 
-         {/* Modal (same as before) */}
+         {/* Modal */}
          {modalOpen && (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
                <div className="bg-white rounded-xl max-w-md w-full p-6">

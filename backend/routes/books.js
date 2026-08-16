@@ -3,6 +3,15 @@ const router = express.Router();
 const Book = require("../models/Book");
 const Loan = require("../models/Loan");
 
+// Define all possible categories
+const ALL_CATEGORIES = [
+   "Biography / History",
+   "Children",
+   "Filipiniana",
+   "Local History & Culture",
+   "Young Adult",
+];
+
 router.get("/search", async (req, res) => {
    try {
       const { q, category } = req.query;
@@ -15,7 +24,14 @@ router.get("/search", async (req, res) => {
             ],
          };
       if (category) filter.category = category;
-      const books = await Book.find(filter).limit(20);
+      
+      // ❌ REMOVE .limit(20)
+      // const books = await Book.find(filter).limit(20); 
+      
+      // ✅ FIX: Remove the limit to get all books for grouping, 
+      // or set it to a much higher number like .limit(500) if you have tons of books
+      const books = await Book.find(filter); 
+      
       res.json(books);
    } catch (err) {
       console.error(err);
@@ -25,9 +41,16 @@ router.get("/search", async (req, res) => {
 
 router.get("/categories", async (req, res) => {
    try {
-      const categories = await Book.distinct("category");
-      res.json(categories);
+      // Get categories that exist in the database
+      const existingCategories = await Book.distinct("category");
+      
+      // Combine predefined categories with existing ones, deduplicate, and sort alphabetically
+      const combined = [...new Set([...ALL_CATEGORIES, ...existingCategories])];
+      const sorted = combined.sort((a, b) => a.localeCompare(b));
+      
+      res.json(sorted);
    } catch (err) {
+      console.error(err);
       res.status(500).json({ error: "Server error" });
    }
 });

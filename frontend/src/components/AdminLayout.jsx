@@ -38,7 +38,6 @@ export default function AdminLayout() {
       });
       if (res.ok) {
         const loans = await res.json();
-        const today = new Date().toISOString().split("T")[0];
         const overdue = loans.filter(l => isPast(new Date(l.due_date)) && l.status !== "returned");
         const dueToday = loans.filter(l => isToday(new Date(l.due_date)) && l.status === "borrowed");
         const dueTomorrow = loans.filter(l => isTomorrow(new Date(l.due_date)) && l.status === "borrowed");
@@ -82,7 +81,6 @@ export default function AdminLayout() {
 
   const handleNavClick = (path) => {
     if (PROTECTED_PATHS.includes(path)) {
-      // Always ask for PIN, no caching
       setPinModal({ open: true, targetPath: path });
     } else {
       navigate(path);
@@ -115,12 +113,10 @@ export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-[#F0F4F8] flex">
       <Toaster position="top-right" />
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 bg-black/40 z-20 lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
-      {/* Sidebar */}
       <aside className={`fixed lg:sticky top-0 left-0 h-screen w-64 bg-[#1B3A6B] flex flex-col z-30 transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
         <div className="px-5 py-5 border-b border-white/10">
           <div className="flex items-center gap-3">
@@ -171,9 +167,7 @@ export default function AdminLayout() {
         </div>
       </aside>
 
-      {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
         <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 sticky top-0 z-10 shadow-sm">
           <button onClick={() => setSidebarOpen(true)} className="text-gray-500 hover:text-gray-700 lg:hidden">
             <Menu className="w-5 h-5" />
@@ -185,7 +179,7 @@ export default function AdminLayout() {
           <button
             onClick={() => setShowNotificationPanel(true)}
             className="relative p-2 rounded-xl hover:bg-gray-100 transition"
-            title="View due date alerts"
+            title="View reminders"
           >
             <Bell className="w-5 h-5 text-gray-600" />
             {totalAlerts > 0 && (
@@ -206,7 +200,7 @@ export default function AdminLayout() {
         <div className="fixed inset-0 bg-black/50 z-50 flex justify-end">
           <div className="bg-white w-full max-w-sm h-full shadow-xl flex flex-col">
             <div className="bg-red-600 text-white p-4 flex justify-between items-center">
-              <div className="flex items-center gap-2"><Bell className="w-5 h-5" /> Due Date Alerts ({totalAlerts})</div>
+              <div className="flex items-center gap-2"><Bell className="w-5 h-5" /> Reminder ({totalAlerts})</div>
               <button onClick={() => setShowNotificationPanel(false)}><X className="w-5 h-5" /></button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -215,7 +209,7 @@ export default function AdminLayout() {
                   <div className="font-medium">{loan.book.title}</div>
                   <div className="text-sm">{loan.visitor.name} | {loan.email}</div>
                   <div className="text-xs text-gray-500">Due: {format(new Date(loan.due_date), 'PPP')}</div>
-                  {!loan.reminder_sent && <button onClick={() => handleSendReminder(loan)} className="mt-1 bg-red-500 text-white text-xs px-2 py-1 rounded">Remind</button>}
+                  {!loan.reminder_sent && <button onClick={() => handleSendReminder(loan)} className="mt-1 bg-red-500 text-white text-xs px-2 py-1 rounded">Reminder</button>}
                 </div>
               ))}</div>}
               {alerts.dueToday.length > 0 && <div><div className="bg-orange-50 p-2 font-bold text-orange-700 rounded-t">⏰ DUE TODAY</div>{alerts.dueToday.map(loan => (
@@ -234,7 +228,7 @@ export default function AdminLayout() {
                   {!loan.reminder_sent && <button onClick={() => handleSendReminder(loan)} className="mt-1 bg-yellow-500 text-white text-xs px-2 py-1 rounded">Remind</button>}
                 </div>
               ))}</div>}
-              {totalAlerts === 0 && <div className="text-center text-gray-500 py-8">No due date alerts.</div>}
+              {totalAlerts === 0 && <div className="text-center text-gray-500 py-8">No reminders.</div>}
             </div>
           </div>
         </div>

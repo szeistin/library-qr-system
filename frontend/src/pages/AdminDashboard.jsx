@@ -91,7 +91,6 @@ export default function AdminDashboard() {
       const res = await fetch(`${API_URL}/visits/active`, { headers });
       if (res.ok) {
         const allActive = await res.json();
-        // Keep only visitors who checked in today (forget yesterday's stragglers)
         const todayActive = filterTodayActiveVisitors(allActive);
         setActiveVisitors(todayActive);
       }
@@ -153,12 +152,11 @@ export default function AdminDashboard() {
     fetchMostBorrowed();
   }, []);
 
-  // Recompute daily stats from filtered data
   const todayActiveCount = activeVisitors.length;
   const todayCheckedOutCount = todayRecords.filter(r => r.status === "completed" && r.check_out_time && isSameDay(new Date(r.check_out_time), new Date())).length;
   const totalTodayVisitors = todayRecords.length;
 
-  // ---- QR Scanner (auto start, mirrored) ----
+  // ---- QR Scanner ----
   useEffect(() => {
     const startScanner = async () => {
       if (!scannerRef.current) return;
@@ -199,28 +197,22 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  // ---- Scan lock to prevent double processing ----
   const scanLock = useRef(false);
 
-  // ---- Check‑in/out (auto toggle) ----
   const handleCheckInOut = async (identifier) => {
     if (!identifier || scanLock.current) return;
-
     scanLock.current = true;
     setLoading(true);
-
     try {
       const isReference = identifier.startsWith("LIB-") || identifier.startsWith("REF-");
       const body = isReference
         ? { reference_number: identifier }
         : { qr_token: identifier };
-
       const res = await fetch(`${API_URL}/visits/scan`, {
         method: "POST",
         headers,
         body: JSON.stringify(body),
       });
-
       let data;
       try {
         data = await res.json();
@@ -229,26 +221,20 @@ export default function AdminDashboard() {
         console.error("INVALID JSON:", text);
         throw new Error("Server returned invalid JSON");
       }
-
       if (!res.ok) throw new Error(data.error);
-
       const visit = data.visit;
       const action = data.action;
       const visitorName = visit.visitor.name;
-
       const message = action === "checkout"
         ? `Checked out ${visitorName}`
         : `Checked in ${visitorName}`;
-
       toast.success(message);
       setScanResult({ type: "success", message });
-
       if (action === "checkout") {
         setActiveVisitors((prev) => prev.filter((v) => v.visitor.qr_token !== visit.visitor.qr_token));
       } else {
         setActiveVisitors((prev) => [visit, ...prev]);
       }
-
       setTodayRecords((prev) => {
         const index = prev.findIndex((r) => r._id === visit._id);
         if (index !== -1) {
@@ -258,14 +244,12 @@ export default function AdminDashboard() {
         }
         return [visit, ...prev];
       });
-
       setTimeout(() => {
         fetchActiveVisitors();
         fetchStats();
         fetchTodayData();
         fetchPieData();
       }, 500);
-
     } catch (err) {
       toast.error(err.message);
       setScanResult({ type: "error", message: err.message });
@@ -284,27 +268,21 @@ export default function AdminDashboard() {
     setTimeout(() => setAssistedResult(null), 3000);
   };
 
-  // Peak hours calculations
   const peakHour = PEAK_HOURS_DATA.reduce((a, b) => a.today > b.today ? a : b);
   const quietHour = PEAK_HOURS_DATA.reduce((a, b) => a.today < b.today ? a : b);
-  const avgPerHour = Math.round(PEAK_HOURS_DATA.reduce((s, d) => s + d.today, 0) / PEAK_HOURS_DATA.length);
-  const currentLoad = PEAK_HOURS_DATA.find(d => d.hour === CURRENT_HOUR)?.today ?? 0;
-  const loadLabel = currentLoad >= 12 ? "Busy" : currentLoad >= 7 ? "Moderate" : "Quiet";
-  const loadColor = currentLoad >= 12 ? "text-red-600 bg-red-50" : currentLoad >= 7 ? "text-orange-500 bg-orange-50" : "text-green-600 bg-green-50";
-
   const sortedTodayRecords = [...todayRecords].sort((a, b) => new Date(b.check_in_time) - new Date(a.check_in_time));
 
   return (
     <div className="p-4 md:p-6 space-y-5">
       <Toaster position="top-right" />
 
-      {/* Stats Cards – using filtered daily numbers */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
-          { label: "Today's Visitors", value: totalTodayVisitors, icon: Users, badge: "bg-blue-100", iconColor: "text-blue-600" },
+          { label: "Today's Visitor/s", value: totalTodayVisitors, icon: Users, badge: "bg-blue-100", iconColor: "text-blue-600" },
           { label: "Currently In Library", value: todayActiveCount, icon: UserCheck, badge: "bg-teal-100", iconColor: "text-teal-600" },
           { label: "Checked Out", value: todayCheckedOutCount, icon: CheckCircle, badge: "bg-purple-100", iconColor: "text-purple-600" },
-          { label: "Active Borrows", value: stats.activeBorrows, icon: BookOpen, badge: "bg-orange-100", iconColor: "text-orange-600" },
+          { label: "Active Borrower/s", value: stats.activeBorrows, icon: BookOpen, badge: "bg-orange-100", iconColor: "text-orange-600" }, // ✅ Renamed
         ].map(({ label, value, icon: Icon, badge, iconColor }) => (
           <div key={label} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
             <div className={`w-9 h-9 rounded-xl ${badge} flex items-center justify-center mb-2`}>

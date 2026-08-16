@@ -6,7 +6,7 @@ import { ArrowLeft, Phone, Mail, Calendar, BookOpen, CheckCircle } from "lucide-
 export default function ConfirmBorrow() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { book } = location.state || {};
+  const { books = [] } = location.state || {};
   const [visitor, setVisitor] = useState(null);
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -17,15 +17,15 @@ export default function ConfirmBorrow() {
 
   useEffect(() => {
     const stored = localStorage.getItem("visitor");
-    if (!stored || !book) {
-      navigate("/");
+    if (!stored || books.length === 0) {
+      navigate("/mobile/borrow");
       return;
     }
     const v = JSON.parse(stored);
     setVisitor(v);
     if (v.phone) setPhone(v.phone);
     if (v.email) setEmail(v.email);
-  }, [book, navigate]);
+  }, [books, navigate]);
 
   const validate = () => {
     const errors = {};
@@ -42,20 +42,26 @@ export default function ConfirmBorrow() {
     setError("");
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + returnDays);
-    const payload = {
+    const basePayload = {
       visitorId: visitor.id,
-      bookId: book._id,
       dueDate: dueDate.toISOString(),
       phone,
       email,
     };
+
     try {
-      const result = await borrowBook(localStorage.getItem("token"), payload);
+      // Create one loan per book
+      const promises = books.map((book) =>
+        borrowBook(localStorage.getItem("token"), { ...basePayload, bookId: book._id })
+      );
+      const results = await Promise.all(promises);
+      const borrowQrTokens = results.map(r => r.borrow_qr_token);
+
       localStorage.setItem("borrowInfo", JSON.stringify({
-        book,
+        books,
         borrowDate: new Date().toISOString(),
         dueDate: dueDate.toISOString(),
-        borrow_qr_token: result.borrow_qr_token,
+        borrow_qr_tokens: borrowQrTokens,
         phone,
         email,
       }));
@@ -67,7 +73,7 @@ export default function ConfirmBorrow() {
     }
   };
 
-  if (!book) return null;
+  if (books.length === 0) return null;
 
   const inputClass = (field) => `
     w-full border ${fieldErrors[field] ? "border-red-400 bg-red-50" : "border-gray-200"} rounded-xl px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]
@@ -82,23 +88,27 @@ export default function ConfirmBorrow() {
           </button>
           <div>
             <p className="text-white text-sm font-bold">CONFIRM BORROW</p>
-            <p className="text-blue-200 text-xs">Review your borrow details</p>
+            <p className="text-blue-200 text-xs">{books.length} book(s) selected</p>
           </div>
         </div>
       </div>
 
       <div className="px-4 py-4 space-y-4">
         <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
-          <p className="text-gray-400 text-xs uppercase tracking-wide">SELECTED BOOK</p>
-          <div className="flex items-center gap-3 mt-2">
-            <div className="w-9 h-12 bg-gradient-to-b from-[#1B3A6B] to-[#2a5298] rounded-lg flex items-center justify-center">
-              <BookOpen className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <p className="text-[#1B3A6B] text-sm font-bold">{book.title}</p>
-              <p className="text-gray-400 text-xs">{book.author}</p>
-              <span className="text-xs bg-[#EBF0F7] text-[#1B3A6B] px-2 py-0.5 rounded-full">{book.category}</span>
-            </div>
+          <p className="text-gray-400 text-xs uppercase tracking-wide">BOOKS TO BORROW</p>
+          <div className="space-y-2 mt-2">
+            {books.map((book, idx) => (
+              <div key={book._id} className="flex items-center gap-3 py-2 border-b last:border-0">
+                <div className="w-8 h-10 bg-gradient-to-b from-[#1B3A6B] to-[#2a5298] rounded-lg flex items-center justify-center">
+                  <BookOpen className="w-3 h-3 text-white" />
+                </div>
+                <div>
+                  <p className="text-[#1B3A6B] text-xs font-bold">{book.title}</p>
+                  <p className="text-gray-400 text-xs">{book.author}</p>
+                </div>
+                <span className="text-xs bg-[#EBF0F7] text-[#1B3A6B] px-2 py-0.5 rounded-full">{book.category}</span>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -150,7 +160,7 @@ export default function ConfirmBorrow() {
           disabled={loading}
           className="w-full bg-[#C9A227] text-white py-4 rounded-2xl font-bold text-sm shadow-lg flex items-center justify-center gap-2"
         >
-          {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><CheckCircle className="w-4 h-4" /> CONFIRM & GENERATE QR</>}
+          {loading ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><CheckCircle className="w-4 h-4" /> CONFIRM & GENERATE QR ({books.length} book{books.length > 1 ? "s" : ""})</>}
         </button>
       </div>
     </>

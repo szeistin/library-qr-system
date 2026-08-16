@@ -6,12 +6,13 @@ import {
    Edit3,
    Star,
    QrCode,
-   ChevronRight,
    ChevronDown,
-   CheckCircle,
+   ChevronRight,
    LogOut,
+   AlertTriangle,
+   Lock,
 } from "lucide-react";
-import { getVisitorLoans } from "../api/api";
+import { getVisitorLoans, getRecommendedBooks } from "../api/api";
 
 export default function VisitorHome() {
    const navigate = useNavigate();
@@ -31,6 +32,7 @@ export default function VisitorHome() {
       }
       const v = JSON.parse(stored);
       setVisitor(v);
+
       if (v.qr_url) {
          import("qrcode").then((QRCode) => {
             QRCode.toDataURL(v.qr_url, (err, url) => {
@@ -41,23 +43,25 @@ export default function VisitorHome() {
    }, [navigate]);
 
    useEffect(() => {
-      if (visitor && visitor.id) {
+      if (visitor?.id) {
          setLoadingLoans(true);
          getVisitorLoans(visitor.id)
-            .then((data) => setBorrowedBooks(data))
-            .catch((err) => console.error(err))
+            .then((data) => setBorrowedBooks(data || []))
+            .catch((err) => console.error("Loans fetch error:", err))
             .finally(() => setLoadingLoans(false));
       }
    }, [visitor]);
 
    useEffect(() => {
       if (visitor?.dob) {
-         fetch(
-            `${import.meta.env.VITE_API_URL}/books/recommended?dob=${visitor.dob}`,
-         )
-            .then((res) => res.json())
-            .then((data) => setRecommendedBooks(data))
-            .catch((err) => console.error(err))
+         getRecommendedBooks(visitor.dob)
+            .then((data) => {
+               const sorted = [...(data || [])].sort((a, b) =>
+                  a.title.localeCompare(b.title),
+               );
+               setRecommendedBooks(sorted);
+            })
+            .catch((err) => console.error("Recommendations fetch error:", err))
             .finally(() => setLoadingRecs(false));
       }
    }, [visitor]);
@@ -67,11 +71,26 @@ export default function VisitorHome() {
       navigate("/");
    };
 
-   if (!visitor) return <div className="p-4 text-center">Loading...</div>;
+   if (!visitor)
+      return <div className="p-4 text-center text-gray-500">Loading...</div>;
 
-   const age = visitor.dob
-      ? new Date().getFullYear() - new Date(visitor.dob).getFullYear()
-      : 0;
+   // Exact age calculation
+   const getExactAge = (dobString) => {
+      if (!dobString) return 0;
+      const birthDate = new Date(dobString);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (
+         monthDiff < 0 ||
+         (monthDiff === 0 && today.getDate() < birthDate.getDate())
+      ) {
+         age--;
+      }
+      return age;
+   };
+
+   const age = getExactAge(visitor.dob);
    const ageGroup =
       age >= 6 && age <= 12
          ? "Children"
@@ -80,6 +99,22 @@ export default function VisitorHome() {
            : age >= 22 && age <= 35
              ? "Young Adults"
              : "Adults";
+
+   // Account Blocking Logic Condition
+   const todayZero = new Date().setHours(0, 0, 0, 0);
+   const hasUnretrievedOrOverdue = borrowedBooks.some((loan) => {
+      const dueZero = new Date(loan.due_date).setHours(0, 0, 0, 0);
+      return (
+         loan.status === "unretrieved" ||
+         loan.status === "overdue" ||
+         (loan.status !== "returned" && dueZero < todayZero)
+      );
+   });
+
+   const isBlocked =
+      visitor.status === "blocked" ||
+      visitor.is_blocked === true ||
+      hasUnretrievedOrOverdue;
 
    return (
       <>
@@ -93,14 +128,16 @@ export default function VisitorHome() {
                   <div>
                      <p className="text-blue-200 text-xs">Welcome back,</p>
                      <p className="text-white font-bold text-sm">
-                        {visitor.name.split(" ")[0]}
+                        {visitor.name ? visitor.name.split(" ")[0] : "Visitor"}
                      </p>
                   </div>
                </div>
                <div className="flex gap-2">
                   <button
                      onClick={() =>
-                        navigate("/mobile/checkin", { state: { editMode: true } })
+                        navigate("/mobile/checkin", {
+                           state: { editMode: true },
+                        })
                      }
                      className="bg-white/10 text-white text-xs px-3 py-1.5 rounded-lg flex items-center gap-1"
                   >
@@ -114,19 +151,40 @@ export default function VisitorHome() {
                   </button>
                </div>
             </div>
-            <div className="flex gap-2 mt-3">
+            <div className="flex gap-2 mt-3 items-center">
                <span className="bg-[#C9A227] text-white text-xs px-2 py-1 rounded-lg">
                   {ageGroup} ({age} yrs)
                </span>
                <span className="bg-white/20 text-white text-xs px-2 py-1 rounded-lg">
                   {visitor.purpose || "Study / Research"}
                </span>
+               {isBlocked && (
+                  <span className="bg-red-600 text-white text-xs px-2 py-1 rounded-lg font-bold flex items-center gap-1">
+                     <Lock className="w-3 h-3" /> Restricted
+                  </span>
+               )}
             </div>
          </div>
 
-         {/* Rest of your component unchanged */}
          <div className="px-4 py-4 space-y-4">
-            {/* Expandable QR Visitor Pass Card */}
+            {/* Account Blocked Warning Banner */}
+            {isBlocked && (
+               <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex items-start gap-3 shadow-sm">
+                  <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                  <div>
+                     <p className="text-red-800 text-xs font-bold">
+                        Account Restricted
+                     </p>
+                     <p className="text-red-700 text-xs mt-0.5">
+                        Your account is currently restricted from borrowing new
+                        books due to unretrieved reservations or overdue loans.
+                        Please contact library staff to unblock your account.
+                     </p>
+                  </div>
+               </div>
+            )}
+
+            {/* QR Pass Card */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                <button
                   onClick={() => setQrExpanded(!qrExpanded)}
@@ -142,7 +200,9 @@ export default function VisitorHome() {
                      </p>
                   </div>
                   <ChevronDown
-                     className={`w-4 h-4 text-gray-400 transition-transform ${qrExpanded ? "rotate-180" : ""}`}
+                     className={`w-4 h-4 text-gray-400 transition-transform ${
+                        qrExpanded ? "rotate-180" : ""
+                     }`}
                   />
                </button>
                {qrExpanded && (
@@ -168,123 +228,131 @@ export default function VisitorHome() {
                )}
             </div>
 
-            {/* Borrow a Book Banner */}
-            <Link to="/mobile/borrow">
-               <div className="bg-[#1B3A6B] rounded-2xl p-4 shadow-md flex items-center justify-between">
+            {/* Borrow Banner (Disabled if blocked) */}
+            {isBlocked ? (
+               <div className="bg-gray-200 rounded-2xl p-4 shadow-sm flex items-center justify-between opacity-75 cursor-not-allowed">
                   <div className="flex items-center gap-3">
-                     <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
-                        <BookOpen className="w-5 h-5 text-white" />
+                     <div className="w-10 h-10 bg-gray-400/30 rounded-xl flex items-center justify-center">
+                        <Lock className="w-5 h-5 text-gray-600" />
                      </div>
                      <div>
-                        <p className="text-white font-bold text-sm">
-                           BORROW A BOOK
+                        <p className="text-gray-700 font-bold text-sm">
+                           BORROWING DISABLED
                         </p>
-                        <p className="text-blue-200 text-xs">
-                           Search and reserve books
+                        <p className="text-gray-500 text-xs">
+                           Resolve overdue books to continue
                         </p>
                      </div>
                   </div>
-                  <ChevronRight className="w-5 h-5 text-white/60" />
                </div>
-            </Link>
+            ) : (
+               <Link to="/mobile/borrow">
+                  <div className="bg-[#1B3A6B] rounded-2xl p-4 shadow-md flex items-center justify-between">
+                     <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                           <BookOpen className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                           <p className="text-white font-bold text-sm">
+                              BORROW A BOOK
+                           </p>
+                           <p className="text-blue-200 text-xs">
+                              Search and reserve books
+                           </p>
+                        </div>
+                     </div>
+                     <ChevronRight className="w-5 h-5 text-white/60" />
+                  </div>
+               </Link>
+            )}
 
-            {/* Borrowing History Section (limit 3, with "View Full History" button) */}
+            {/* Borrowed Books History */}
             <div>
                <div className="flex justify-between items-center mb-2">
                   <h3 className="text-sm font-bold text-[#1B3A6B]">
                      Your borrowed books
                   </h3>
-                  <Link to="/mobile/history" className="text-xs text-primary">
+                  <Link
+                     to="/mobile/history"
+                     className="text-xs text-blue-600 font-medium"
+                  >
                      View Full History →
                   </Link>
                </div>
                {loadingLoans ? (
-                  <div className="text-center text-gray-400 text-sm">
+                  <div className="text-center text-gray-400 text-sm py-2">
                      Loading your history...
                   </div>
                ) : borrowedBooks.length === 0 ? (
-                  <div className="text-center text-gray-400 text-sm">
+                  <div className="text-center text-gray-400 text-sm py-2">
                      You haven't borrowed any books yet.
                   </div>
                ) : (
                   <div className="space-y-2">
                      {borrowedBooks.slice(0, 3).map((loan) => {
                         const due = new Date(loan.due_date);
-                        const today = new Date();
+                        const dueZero = new Date(due).setHours(0, 0, 0, 0);
+
                         let statusText = "";
                         let statusClass = "";
+
                         if (loan.status === "returned") {
                            statusText = "Returned";
                            statusClass = "bg-gray-100 text-gray-600";
-                        } else if (due < today) {
-                           statusText = "Overdue";
-                           statusClass = "bg-red-100 text-red-600";
+                        } else if (loan.status === "unretrieved") {
+                           statusText = "Unretrieved (Blocked)";
+                           statusClass = "bg-red-100 text-red-700 font-bold";
                         } else if (
-                           due.toDateString() === today.toDateString()
+                           dueZero < todayZero ||
+                           loan.status === "overdue"
                         ) {
+                           statusText = "Overdue";
+                           statusClass = "bg-red-100 text-red-600 font-bold";
+                        } else if (dueZero === todayZero) {
                            statusText = "Due Today";
                            statusClass = "bg-orange-100 text-orange-600";
                         } else {
                            statusText = "Active";
                            statusClass = "bg-green-100 text-green-600";
                         }
+
                         return (
                            <div
                               key={loan._id}
-                              className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm"
+                              className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex justify-between items-start"
                            >
-                              <div className="flex justify-between items-start">
-                                 <div>
-                                    <p className="text-[#1B3A6B] text-xs font-bold">
-                                       {loan.book.title}
+                              <div>
+                                 <p className="text-[#1B3A6B] text-xs font-bold">
+                                    {loan.book?.title || "Unknown Book"}
+                                 </p>
+                                 <p className="text-gray-400 text-xs">
+                                    {loan.book?.author || "Unknown Author"}
+                                 </p>
+                                 <p className="text-xs text-gray-500 mt-1">
+                                    Borrowed:{" "}
+                                    {new Date(
+                                       loan.borrow_date,
+                                    ).toLocaleDateString()}
+                                 </p>
+                                 {loan.status !== "returned" && (
+                                    <p className="text-xs text-gray-500">
+                                       Due: {due.toLocaleDateString()}
                                     </p>
-                                    <p className="text-gray-400 text-xs">
-                                       {loan.book.author}
-                                    </p>
-                                    <p className="text-xs text-gray-500 mt-1">
-                                       Borrowed:{" "}
-                                       {new Date(
-                                          loan.borrow_date,
-                                       ).toLocaleDateString()}
-                                    </p>
-                                    {loan.status !== "returned" && (
-                                       <p className="text-xs text-gray-500">
-                                          Due: {due.toLocaleDateString()}
-                                       </p>
-                                    )}
-                                    {loan.return_date && (
-                                       <p className="text-xs text-gray-500">
-                                          Returned:{" "}
-                                          {new Date(
-                                             loan.return_date,
-                                          ).toLocaleDateString()}
-                                       </p>
-                                    )}
-                                 </div>
-                                 <span
-                                    className={`text-xs px-2 py-0.5 rounded-full ${statusClass}`}
-                                 >
-                                    {statusText}
-                                 </span>
+                                 )}
                               </div>
+                              <span
+                                 className={`text-xs px-2 py-0.5 rounded-full ${statusClass}`}
+                              >
+                                 {statusText}
+                              </span>
                            </div>
                         );
                      })}
-                     {borrowedBooks.length > 3 && (
-                        <div className="text-center pt-1">
-                           <Link
-                              to="/mobile/history"
-                              className="text-xs text-primary underline"
-                           >
-                              + {borrowedBooks.length - 3} more
-                           </Link>
-                        </div>
-                     )}
                   </div>
                )}
             </div>
 
-            {/* Recommended Books Section */}
+            {/* Recommended Books */}
             <div>
                <div className="flex items-center gap-1 mb-2">
                   <Star className="w-4 h-4 text-[#C9A227] fill-[#C9A227]" />
@@ -293,41 +361,50 @@ export default function VisitorHome() {
                   </p>
                </div>
                {loadingRecs ? (
-                  <div className="text-sm text-gray-400">Loading...</div>
+                  <div className="text-sm text-gray-400 py-2">Loading...</div>
                ) : recommendedBooks.length === 0 ? (
-                  <div className="text-sm text-gray-400">
+                  <div className="text-sm text-gray-400 py-2">
                      No recommendations available.
                   </div>
                ) : (
                   <div className="space-y-2">
+                     {/* Recommended Books List */}
                      {recommendedBooks.slice(0, 3).map((book) => (
                         <div
                            key={book._id}
-                           className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-center gap-3"
+                           onClick={() => {
+                              if (!isBlocked) {
+                                 navigate("/mobile/borrow", {
+                                    state: {
+                                       tab: "recommendations",
+                                       selectedBook: book,
+                                    },
+                                 });
+                              }
+                           }}
+                           className={`bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-center gap-3 transition-all ${
+                              isBlocked
+                                 ? "opacity-60 cursor-not-allowed"
+                                 : "cursor-pointer hover:border-blue-300 hover:shadow-md"
+                           }`}
                         >
-                           <div className="w-10 h-12 bg-gradient-to-b from-[#1B3A6B] to-[#2a5298] rounded-lg flex items-center justify-center">
+                           <div className="w-10 h-12 bg-gradient-to-b from-[#1B3A6B] to-[#2a5298] rounded-lg flex items-center justify-center shrink-0">
                               <BookOpen className="w-5 h-5 text-white" />
                            </div>
-                           <div className="flex-1">
+                           <div className="flex-1 min-w-0">
                               <p className="text-[#1B3A6B] text-xs font-bold truncate">
                                  {book.title}
                               </p>
-                              <p className="text-gray-400 text-xs">
+                              <p className="text-gray-400 text-xs truncate">
                                  {book.author}
                               </p>
                               <div className="flex items-center gap-2 mt-1">
                                  <span className="text-xs bg-[#EBF0F7] text-[#1B3A6B] px-2 py-0.5 rounded-full">
                                     {book.category}
                                  </span>
-                                 <div className="flex items-center gap-0.5">
-                                    <Star className="w-3 h-3 text-[#C9A227] fill-[#C9A227]" />
-                                    <span className="text-xs text-gray-500">
-                                       {book.borrowCount || 0} borrows
-                                    </span>
-                                 </div>
                               </div>
                            </div>
-                           <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                           <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full shrink-0">
                               Available
                            </span>
                         </div>
