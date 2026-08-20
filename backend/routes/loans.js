@@ -10,9 +10,27 @@ const { sendReminderEmail } = require("../utils/email");
 router.post("/borrow", async (req, res) => {
    try {
       const { visitorId, bookId, dueDate, phone, email } = req.body;
+
       const visitor = await Visitor.findById(visitorId);
       if (!visitor) return res.status(404).json({ error: "Visitor not found" });
 
+      // 1. Block if visitor has ANY active, unreturned, lost, or pending books by Email or Phone
+      const existingActiveLoan = await Loan.findOne({
+         $or: [
+            { email: email?.trim().toLowerCase() },
+            { phone: phone?.trim() }
+         ],
+         status: { $in: ["borrowed", "overdue", "not_returned", "pending"] }
+      }).populate("book");
+
+      if (existingActiveLoan) {
+         const bookTitle = existingActiveLoan.book?.title || "a previously borrowed book";
+         return res.status(400).json({
+            error: `Borrowing blocked! You currently have an active or unreturned book ("${bookTitle}"). Please return it before requesting another.`
+         });
+      }
+
+      // 2. Check book availability
       const book = await Book.findById(bookId);
       if (!book || book.available_copies < 1) {
          return res.status(400).json({ error: "Book not available" });
@@ -24,8 +42,8 @@ router.post("/borrow", async (req, res) => {
          book: bookId,
          due_date: new Date(dueDate),
          borrow_qr_token,
-         phone,
-         email,
+         phone: phone?.trim(),
+         email: email?.trim().toLowerCase(),
          status: "pending", // wait for admin confirmation
       });
       await loan.save();
@@ -41,6 +59,58 @@ router.post("/borrow", async (req, res) => {
    }
 });
 
+// POST /loans (Create new borrowing record directly by Admin)
+router.post("/loans", async (req, res) => {
+  try {
+    const { visitor, email, phone, book_id } = req.body;
+
+    // 1. Check if the borrower has ANY active, unreturned, or lost books by Email or Phone
+    const existingActiveLoan = await Loan.findOne({
+      $or: [
+        { email: email?.trim().toLowerCase() },
+        { phone: phone?.trim() }
+      ],
+      status: { $in: ["borrowed", "overdue", "not_returned", "pending"] }
+    }).populate("book");
+
+    // 2. Block borrowing if an unreturned book exists
+    if (existingActiveLoan) {
+      const bookTitle = existingActiveLoan.book?.title || "a previously borrowed book";
+      return res.status(400).json({
+        error: `Borrowing blocked! You currently have an unreturned book ("${bookTitle}"). Please return it before checking out another book.`
+      });
+    }
+
+    // 3. Check book availability
+    const book = await Book.findById(book_id);
+    if (!book || book.available_copies <= 0) {
+      return res.status(400).json({ error: "Book is currently out of stock." });
+    }
+
+    // 4. Create new loan record
+    const newLoan = new Loan({
+      visitor,
+      email: email?.trim().toLowerCase(),
+      phone: phone?.trim(),
+      book: book_id,
+      status: "borrowed",
+      borrow_date: new Date(),
+      due_date: req.body.due_date
+    });
+
+    // 5. Deduct 1 available copy from the book
+    book.available_copies -= 1;
+    await book.save();
+    await newLoan.save();
+
+    res.status(201).json({ message: "Book borrowed successfully!", loan: newLoan });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to process loan request." });
+  }
+});
+
+// Confirm pending loan (Admin confirmation)
 router.post("/confirm/:token", async (req, res) => {
    try {
       const { token } = req.params;
@@ -65,7 +135,7 @@ router.post("/confirm/:token", async (req, res) => {
    }
 });
 
-// Return a book (with optional issues) -> book becomes available again
+// Return a book (with optional issues)
 router.post("/return", async (req, res) => {
    try {
       const { borrow_qr_token, issues } = req.body;
@@ -92,7 +162,7 @@ router.post("/return", async (req, res) => {
    }
 });
 
-// Mark as not returned (book is lost or not physically returned) -> no change to available_copies
+// Mark as not returned (book is lost or physically unreturned)
 router.post("/not-returned/:token", async (req, res) => {
    try {
       const { token } = req.params;
@@ -102,7 +172,7 @@ router.post("/not-returned/:token", async (req, res) => {
       loan.status = "not_returned";
       loan.return_issues = "Not returned";
       await loan.save();
-      // Do NOT change available_copies – the book is gone
+
       res.json({ message: "Book marked as not returned" });
    } catch (err) {
       console.error(err);
@@ -110,7 +180,7 @@ router.post("/not-returned/:token", async (req, res) => {
    }
 });
 
-// Get loan by QR token (for display)
+// Get loan by QR token
 router.get("/qr/:token", async (req, res) => {
    try {
       const loan = await Loan.findOne({ borrow_qr_token: req.params.token })
@@ -123,7 +193,7 @@ router.get("/qr/:token", async (req, res) => {
    }
 });
 
-// Get all active loans (status = borrowed) for admin
+// Get all active loans (status = borrowed)
 router.get("/active", async (req, res) => {
    try {
       const loans = await Loan.find({ status: "borrowed" })
@@ -152,7 +222,7 @@ router.get("/visitor/:visitorId", async (req, res) => {
    }
 });
 
-// Send due date reminder (simulated)
+// Send due date reminder
 router.post("/:id/reminder", async (req, res) => {
    console.log("Reminder route hit, loan ID:", req.params.id);
    try {
@@ -162,17 +232,10 @@ router.post("/:id/reminder", async (req, res) => {
          return res.status(400).json({ error: "Reminder already sent" });
 
       const dueDateStr = new Date(loan.due_date).toLocaleDateString("en-PH");
-      console.log(
-         "Attempting to send email to:",
-         loan.email,
-         "for book:",
-         loan.book.title,
-      );
       await sendReminderEmail(loan.email, loan.book.title, dueDateStr);
 
       loan.reminder_sent = true;
       await loan.save();
-      console.log("Email sent successfully");
       res.json({ message: "Reminder sent successfully" });
    } catch (err) {
       console.error("Error sending reminder:", err);
@@ -212,9 +275,6 @@ router.get("/history", async (req, res) => {
 });
 
 // POST /api/loans/retrieve/:id
-// When retrieving a loan from history back to active loans,
-// we set status to 'borrowed', clear return fields, and DECREASE available_copies
-// because the book is now borrowed again.
 router.post("/retrieve/:id", async (req, res) => {
    try {
       const loan = await Loan.findById(req.params.id);
@@ -226,7 +286,6 @@ router.post("/retrieve/:id", async (req, res) => {
       loan.return_issues = "";
       await loan.save();
 
-      // Recalculate available copies
       const activeCount = await Loan.countDocuments({ book: loan.book, status: "borrowed" });
       const book = await Book.findById(loan.book);
       if (book) {
@@ -237,6 +296,65 @@ router.post("/retrieve/:id", async (req, res) => {
       res.json({ message: "Loan retrieved back to active", loan });
    } catch (err) {
       console.error(err);
+      res.status(500).json({ error: "Server error" });
+   }
+});
+
+// GET /api/loans/book-status-summary
+router.get("/book-status-summary", async (req, res) => {
+   try {
+      const { month, year } = req.query;
+
+      if (!month || !year) {
+         return res.status(400).json({ error: "Month and year are required" });
+      }
+
+      const m = Number(month);
+      const y = Number(year);
+      const startDate = new Date(y, m - 1, 1);
+      const endDate = new Date(y, m, 0, 23, 59, 59, 999);
+
+      const summary = await Loan.aggregate([
+         {
+            $match: {
+               status: { $ne: "pending" },
+               $or: [
+                  { borrow_date: { $gte: startDate, $lte: endDate } },
+                  { return_date: { $gte: startDate, $lte: endDate } }
+               ]
+            },
+         },
+         {
+            $lookup: {
+               from: "books",
+               localField: "book",
+               foreignField: "_id",
+               as: "bookInfo",
+            },
+         },
+         { $unwind: "$bookInfo" },
+         {
+            $group: {
+               _id: "$bookInfo._id",
+               title: { $first: "$bookInfo.title" },
+               author: { $first: "$bookInfo.author" },
+               borrowed: {
+                  $sum: { $cond: [{ $eq: ["$status", "borrowed"] }, 1, 0] },
+               },
+               returned: {
+                  $sum: { $cond: [{ $eq: ["$status", "returned"] }, 1, 0] },
+               },
+               unreturned: {
+                  $sum: { $cond: [{ $eq: ["$status", "not_returned"] }, 1, 0] },
+               },
+            },
+         },
+         { $sort: { title: 1 } },
+      ]);
+
+      res.json(summary);
+   } catch (err) {
+      console.error("Error fetching circulation summary:", err);
       res.status(500).json({ error: "Server error" });
    }
 });

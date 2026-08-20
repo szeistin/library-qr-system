@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import {
   LayoutDashboard, BookMarked, BarChart3, Smartphone,
-  LogOut, Bell, Menu, X, ChevronRight, Library, Shield
+  LogOut, Bell, Menu, X, ChevronRight, Library
 } from "lucide-react";
 import { format, isPast, isToday, isTomorrow } from "date-fns";
 import { toast, Toaster } from "sonner";
@@ -16,7 +16,6 @@ const NAV_ITEMS = [
   { path: "/admin/progress", label: "Progress Data", icon: BarChart3 },
   { path: "/admin/visitor-pass", label: "Visitor Mobile Pass", icon: Smartphone },
 ];
-const PROTECTED_PATHS = ["/admin/borrowing", "/admin/books"];
 
 export default function AdminLayout() {
   const navigate = useNavigate();
@@ -26,9 +25,6 @@ export default function AdminLayout() {
   const [staff, setStaff] = useState(null);
   const [alerts, setAlerts] = useState({ overdue: [], dueToday: [], dueTomorrow: [] });
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
-  const [pinModal, setPinModal] = useState({ open: false, targetPath: null });
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState("");
   const token = localStorage.getItem("token");
 
   const fetchAlerts = async () => {
@@ -80,32 +76,8 @@ export default function AdminLayout() {
   };
 
   const handleNavClick = (path) => {
-    if (PROTECTED_PATHS.includes(path)) {
-      setPinModal({ open: true, targetPath: path });
-    } else {
-      navigate(path);
-      setSidebarOpen(false);
-    }
-  };
-
-  const verifyPin = async () => {
-    if (!pinInput) return;
-    try {
-      const res = await fetch(`${API_URL}/staff/verify-pin`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ pin: pinInput })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setPinModal({ open: false, targetPath: null });
-      setPinInput("");
-      setPinError("");
-      navigate(pinModal.targetPath);
-      setSidebarOpen(false);
-    } catch (err) {
-      setPinError(err.message);
-    }
+    navigate(path);
+    setSidebarOpen(false);
   };
 
   const currentNav = NAV_ITEMS.find(n => location.pathname === n.path);
@@ -217,7 +189,7 @@ export default function AdminLayout() {
                   <div className="font-medium">{loan.book.title}</div>
                   <div className="text-sm">{loan.visitor.name} | {loan.email}</div>
                   <div className="text-xs text-gray-500">Due: {format(new Date(loan.due_date), 'PPP')}</div>
-                  {!loan.reminder_sent && <button onClick={() => handleSendReminder(loan)} className="mt-1 bg-orange-500 text-white text-xs px-2 py-1 rounded">Remind</button>}
+                  {!loan.reminder_sent && <button onClick={() => handleSendReminder(loan)} className="mt-1 bg-orange-500 text-white text-xs px-2 py-1 rounded">Reminder</button>}
                 </div>
               ))}</div>}
               {alerts.dueTomorrow.length > 0 && <div><div className="bg-yellow-50 p-2 font-bold text-yellow-700 rounded-t">📅 DUE TOMORROW</div>{alerts.dueTomorrow.map(loan => (
@@ -225,37 +197,10 @@ export default function AdminLayout() {
                   <div className="font-medium">{loan.book.title}</div>
                   <div className="text-sm">{loan.visitor.name} | {loan.email}</div>
                   <div className="text-xs text-gray-500">Due: {format(new Date(loan.due_date), 'PPP')}</div>
-                  {!loan.reminder_sent && <button onClick={() => handleSendReminder(loan)} className="mt-1 bg-yellow-500 text-white text-xs px-2 py-1 rounded">Remind</button>}
+                  {!loan.reminder_sent && <button onClick={() => handleSendReminder(loan)} className="mt-1 bg-yellow-500 text-white text-xs px-2 py-1 rounded">Reminder</button>}
                 </div>
               ))}</div>}
               {totalAlerts === 0 && <div className="text-center text-gray-500 py-8">No reminders.</div>}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PIN Verification Modal */}
-      {pinModal.open && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-sm w-full p-6">
-            <div className="text-center mb-4">
-              <Shield className="w-12 h-12 text-[#1B3A6B] mx-auto mb-2" />
-              <h2 className="text-xl font-bold text-[#1B3A6B]">Verify PIN</h2>
-              <p className="text-sm text-gray-500">Enter your 4-digit PIN to continue</p>
-            </div>
-            <input
-              type="password"
-              maxLength="4"
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value)}
-              className="w-full text-center text-2xl font-mono tracking-widest border border-gray-300 rounded-lg py-2 mb-4 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
-              placeholder="****"
-              autoFocus
-            />
-            {pinError && <div className="text-red-500 text-sm text-center mb-3">{pinError}</div>}
-            <div className="flex gap-3">
-              <button onClick={() => setPinModal({ open: false, targetPath: null })} className="flex-1 bg-gray-200 py-2 rounded-lg">Cancel</button>
-              <button onClick={verifyPin} className="flex-1 bg-[#1B3A6B] text-white py-2 rounded-lg">Verify</button>
             </div>
           </div>
         </div>

@@ -2,13 +2,17 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { format, isPast, isToday, isTomorrow, endOfDay } from "date-fns";
 import { Toaster, toast } from "sonner";
-import { Search, AlertTriangle, Bell, X, CheckCircle, Mail, QrCode, History, AlertCircle } from "lucide-react";
+import { Search, AlertTriangle, Bell, X, CheckCircle, Mail, QrCode, History, AlertCircle, Lock } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function Borrowing() {
   const navigate = useNavigate();
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinLoading, setPinLoading] = useState(false);
+
   const [activeLoans, setActiveLoans] = useState([]);
   const [filteredActive, setFilteredActive] = useState([]);
   const [historyLoans, setHistoryLoans] = useState([]);
@@ -39,7 +43,34 @@ export default function Borrowing() {
     "Other"
   ];
 
-  // Helper for safe date formatting without throwing RangeError
+  const handlePinSubmit = async (e) => {
+    e.preventDefault();
+    if (pinInput.length !== 4) {
+      toast.error("Please enter a 4-digit PIN");
+      return;
+    }
+
+    setPinLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/staff/verify-pin`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ pin: pinInput }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Incorrect PIN code");
+
+      setIsUnlocked(true);
+      toast.success("Access granted");
+    } catch (err) {
+      toast.error(err.message);
+      setPinInput("");
+    } finally {
+      setPinLoading(false);
+    }
+  };
+
   const formatDateSafe = (dateVal, formatStr = "PPP") => {
     if (!dateVal) return "—";
     const d = new Date(dateVal);
@@ -79,11 +110,12 @@ export default function Borrowing() {
   };
 
   useEffect(() => {
-    fetchActiveLoans();
-    fetchHistoryLoans();
-  }, []);
+    if (isUnlocked) {
+      fetchActiveLoans();
+      fetchHistoryLoans();
+    }
+  }, [isUnlocked]);
 
-  // Filter Search Logic with Safe Null Checks
   useEffect(() => {
     const term = searchTerm.toLowerCase().trim();
     const filterFn = loan => {
@@ -101,6 +133,8 @@ export default function Borrowing() {
   }, [searchTerm, activeLoans, historyLoans, activeTab]);
 
   useEffect(() => {
+    if (!isUnlocked) return;
+
     const startConfirmScanner = async () => {
       if (!confirmScannerRef.current) return;
       if (confirmScannerInstance.current) return;
@@ -138,7 +172,43 @@ export default function Borrowing() {
         confirmScannerInstance.current = null;
       }
     };
-  }, []);
+  }, [isUnlocked]);
+
+  // Full-Page PIN Gate
+  if (!isUnlocked) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh] p-4">
+        <Toaster position="top-right" />
+        <div className="bg-white p-6 rounded-2xl shadow-md border border-gray-100 max-w-sm w-full text-center space-y-4">
+          <div className="w-12 h-12 bg-blue-50 text-[#1B3A6B] rounded-full flex items-center justify-center mx-auto">
+            <Lock className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="font-bold text-gray-800 text-base">Restricted Access</h3>
+            <p className="text-xs text-gray-500 mt-1">Enter your 4-digit staff PIN to access borrowing management</p>
+          </div>
+          <form onSubmit={handlePinSubmit} className="space-y-3">
+            <input
+              type="password"
+              maxLength={4}
+              value={pinInput}
+              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
+              placeholder="****"
+              className="w-full text-center tracking-widest text-2xl font-mono border border-gray-300 rounded-xl p-2 focus:ring-2 focus:ring-[#1B3A6B] outline-none"
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={pinLoading || pinInput.length !== 4}
+              className="w-full bg-[#1B3A6B] text-white py-2.5 rounded-xl text-xs font-bold hover:bg-blue-900 transition disabled:opacity-50"
+            >
+              {pinLoading ? "Verifying..." : "Unlock Section"}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   const handleConfirmBorrow = async (borrowTokenOrTokens) => {
     if (!borrowTokenOrTokens) return;
@@ -403,7 +473,7 @@ export default function Borrowing() {
                             )}
 
                             {!loan.reminder_sent && loan.status !== "returned" && loan.status !== "not_returned" && (
-                              <button onClick={() => handleSendReminder(loan)} className="bg-orange-500 text-white text-[11px] px-2 py-1 rounded w-full flex items-center justify-center gap-1"><Mail className="w-3 h-3" /> Remind</button>
+                              <button onClick={() => handleSendReminder(loan)} className="bg-orange-500 text-white text-[11px] px-2 py-1 rounded w-full flex items-center justify-center gap-1"><Mail className="w-3 h-3" /> Reminder</button>
                             )}
                             {loan.reminder_sent && <span className="text-green-600 text-[11px] flex items-center justify-center gap-1"><CheckCircle className="w-3 h-3" /> Reminder Sent</span>}
                           </td>
@@ -483,7 +553,7 @@ export default function Borrowing() {
                       <div className="font-medium">{l.book?.title}</div>
                       <div>{l.visitor?.name} | {l.email || l.visitor?.email}<br />Due: {formatDateSafe(l.due_date)}</div>
                       {!l.reminder_sent ? (
-                        <button onClick={() => handleSendReminder(l)} className="mt-1 bg-red-500 text-white text-xs px-2 py-1 rounded">Remind</button>
+                        <button onClick={() => handleSendReminder(l)} className="mt-1 bg-red-500 text-white text-xs px-2 py-1 rounded">Reminder</button>
                       ) : <span className="text-green-600 text-xs">✓ Sent</span>}
                     </div>
                   ))}
@@ -497,7 +567,7 @@ export default function Borrowing() {
                       <div className="font-medium">{l.book?.title}</div>
                       <div>{l.visitor?.name} | {l.email || l.visitor?.email}</div>
                       {!l.reminder_sent ? (
-                        <button onClick={() => handleSendReminder(l)} className="mt-1 bg-orange-500 text-white text-xs px-2 py-1 rounded">Remind</button>
+                        <button onClick={() => handleSendReminder(l)} className="mt-1 bg-orange-500 text-white text-xs px-2 py-1 rounded">Reminder</button>
                       ) : <span className="text-green-600 text-xs">✓ Sent</span>}
                     </div>
                   ))}
@@ -511,7 +581,7 @@ export default function Borrowing() {
                       <div className="font-medium">{l.book?.title}</div>
                       <div>{l.visitor?.name} | {l.email || l.visitor?.email}</div>
                       {!l.reminder_sent ? (
-                        <button onClick={() => handleSendReminder(l)} className="mt-1 bg-yellow-500 text-white text-xs px-2 py-1 rounded">Remind</button>
+                        <button onClick={() => handleSendReminder(l)} className="mt-1 bg-yellow-500 text-white text-xs px-2 py-1 rounded">Reminder</button>
                       ) : <span className="text-green-600 text-xs">✓ Sent</span>}
                     </div>
                   ))}
