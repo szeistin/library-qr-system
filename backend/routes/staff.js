@@ -5,40 +5,41 @@ const jwt = require("jsonwebtoken");
 const Staff = require("../models/Staff");
 const StaffLog = require("../models/StaffLog");
 
-router.post("/register", async (req, res) => {
-   try {
-      const { username, position, pin, confirmPin } = req.body;
-      if (pin !== confirmPin)
-         return res.status(400).json({ error: "PINs do not match" });
-      if (pin.length !== 4)
-         return res.status(400).json({ error: "PIN must be 4 digits" });
-      const hashedPin = await bcrypt.hash(pin, 10);
-      const staff = new Staff({ username, position, pin_hash: hashedPin });
-      await staff.save();
-      res.json({ message: "Staff registered successfully" });
-   } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Server error" });
-   }
-});
-
+// LOGIN: Authenticates Username, Position, and PIN
 router.post("/login", async (req, res) => {
    try {
-      const { username, pin } = req.body;
+      const { username, position, pin } = req.body;
+
+      // 1. Find staff member by username
       const staff = await Staff.findOne({ username });
-      if (!staff) return res.status(401).json({ error: "Invalid credentials" });
-      const isValid = await bcrypt.compare(pin, staff.pin_hash);
-      if (!isValid)
+      if (!staff) {
          return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      // 2. Validate position matches the assigned role in the database
+      if (position && staff.position !== position) {
+         return res.status(401).json({ error: "Selected position does not match account records" });
+      }
+
+      // 3. Verify PIN
+      const isValid = await bcrypt.compare(pin, staff.pin_hash);
+      if (!isValid) {
+         return res.status(401).json({ error: "Invalid credentials" });
+      }
+
+      // 4. Generate JWT Token (Includes position for role-based authorization)
       const token = jwt.sign(
-         { id: staff._id, username },
+         { id: staff._id, username: staff.username, position: staff.position },
          process.env.JWT_SECRET,
-         { expiresIn: "8h" },
+         { expiresIn: "8h" }
       );
+
+      // 5. Create audit log entry
       await StaffLog.create({ staff: staff._id });
+
       res.json({
          token,
-         staff: { id: staff._id, username, position: staff.position },
+         staff: { id: staff._id, username: staff.username, position: staff.position },
       });
    } catch (err) {
       console.error(err);
@@ -46,6 +47,7 @@ router.post("/login", async (req, res) => {
    }
 });
 
+// VERIFY PIN: Quick authentication check for sensitive actions inside dashboard
 router.post("/verify-pin", async (req, res) => {
    try {
       const { pin } = req.body;
@@ -65,6 +67,7 @@ router.post("/verify-pin", async (req, res) => {
    }
 });
 
+// LOGOUT
 router.post("/logout", async (req, res) => {
    res.json({ message: "Logged out" });
 });
