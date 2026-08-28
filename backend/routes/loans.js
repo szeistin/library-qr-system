@@ -128,7 +128,7 @@ router.post("/confirm/:token", async (req, res) => {
          await book.save();
       }
 
-      res.json({ message: "Loan confirmed successfully" });
+      res.json({ message: "Borrowed successfully" });
    } catch (err) {
       console.error(err);
       res.status(500).json({ error: "Server error" });

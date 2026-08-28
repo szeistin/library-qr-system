@@ -233,7 +233,7 @@ export default function Borrowing() {
       }
 
       if (successCount > 0) {
-        toast.success(`${successCount} loan(s) confirmed. ${errorCount > 0 ? `${errorCount} failed.` : ""}`);
+        toast.success(`${successCount} borrowed book(s) confirmed. ${errorCount > 0 ? `${errorCount} failed.` : ""}`);
       } else {
         toast.error("No loans confirmed. Check tokens.");
       }
