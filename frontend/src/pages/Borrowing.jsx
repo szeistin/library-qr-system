@@ -305,18 +305,21 @@ export default function Borrowing() {
     }
   };
 
-  const handleSendReminder = async (loan) => {
-    if (loan.reminder_sent) return;
-    try {
-      const res = await fetch(`${API_URL}/loans/${loan._id}/reminder`, { method: "POST", headers });
-      if (!res.ok) throw new Error("Failed to send reminder");
-      
-      setActiveLoans(prev => prev.map(item => item._id === loan._id ? { ...item, reminder_sent: true } : item));
-      toast.success(`Reminder sent to ${loan.email || loan.visitor?.email || "borrower"}`);
-    } catch (err) {
-      toast.error(err.message || "Failed to send reminder");
-    }
-  };
+ const handleSendReminder = async (loan) => {
+  if (loan.reminder_sent) return;
+  try {
+    const res = await fetch(`${API_URL}/loans/${loan._id}/reminder`, { method: "POST", headers });
+    const data = await res.json();                          // ✅ always parse response
+    if (!res.ok) throw new Error(data.error || "Failed to send reminder");
+
+    setActiveLoans(prev => prev.map(item =>
+      item._id === loan._id ? { ...item, reminder_sent: true } : item
+    ));
+    toast.success(`Reminder sent to ${loan.email || loan.visitor?.email || "borrower"}`);
+  } catch (err) {
+    toast.error(err.message);                              // ✅ shows real error now
+  }
+};
 
   const handleRetrieve = async (loan) => {
     if (!window.confirm(`Retrieve "${loan.book?.title || "this book"}"? It will become active again and you can process a proper return.`)) return;
