@@ -47,7 +47,9 @@ function App() {
         {/* Admin routes (unchanged) */}
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin" element={<AdminLayout />}>
-          <Route index element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+        {/* CHANGE THIS LINE: Automatically push /admin to /admin/login */}
+          <Route index element={<Navigate to="/admin/login" replace />} />
+          
           <Route path="dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           <Route path="borrowing" element={<ProtectedRoute><Borrowing /></ProtectedRoute>} />
           <Route path="progress" element={<ProtectedRoute><ProgressData /></ProtectedRoute>} />
