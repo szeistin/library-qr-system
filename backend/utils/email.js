@@ -44,9 +44,10 @@ async function sendReminderEmail(to, bookTitle, dueDate) {
     </div>
   `;
 
-  const response = await fetch(GOOGLE_SCRIPT_URL, {
+ const response = await fetch(GOOGLE_SCRIPT_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    redirect: "follow",  // ✅ add this
+    headers: { "Content-Type": "text/plain;charset=utf-8" }, // ✅ change this
     body: JSON.stringify({
       to,
       subject: "📚 Library Book Due Date Reminder – Action Required",
