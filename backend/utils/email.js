@@ -55,8 +55,9 @@ async function sendReminderEmail(to, bookTitle, dueDate) {
     }),
   });
 
-  const result = await response.json();
-  if (!result.success) throw new Error("Google Script failed to send email");
+  const text = await response.text();
+  console.log("Google Script response:", text);
+  if (!response.ok) throw new Error("Failed to send email via Google Script");
 }
 
 module.exports = { sendReminderEmail };
