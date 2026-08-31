@@ -231,11 +231,6 @@ router.post("/:id/reminder", async (req, res) => {
       if (loan.reminder_sent)
          return res.status(400).json({ error: "Reminder already sent" });
 
-      // ✅ ADD THIS
-      console.log("Sending to:", loan.email);
-      console.log("BREVO_USER:", process.env.BREVO_USER);
-      console.log("BREVO_PASS:", process.env.BREVO_PASS ? "SET" : "MISSING");
-
       const dueDateStr = new Date(loan.due_date).toLocaleDateString("en-PH");
       await sendReminderEmail(loan.email, loan.book.title, dueDateStr);
 
