@@ -18,7 +18,7 @@ export default function QRPass() {
     const data = JSON.parse(stored);
     setVisitor(data);
 
-    // Use qr_url, or fallback to reference_number / ID if qr_url is undefined
+    // Dynamic fallback chain to ensure QR content is never undefined
     const qrText = data.qr_url || data.reference_number || data.id || "LIBRARY-PASS";
 
     QRCode.toDataURL(qrText, { width: 300, margin: 2 }, (err, url) => {
@@ -30,23 +30,68 @@ export default function QRPass() {
     });
   }, [navigate]);
 
-  const handleSaveQR = () => {
+  // Helper: Converts Base64 Data URL to a native File object
+  const dataUrlToFile = (dataUrl, filename) => {
+    const arr = dataUrl.split(",");
+    const mime = arr[0].match(/:(.*?);/)[1];
+    const bstr = atob(arr[1]);
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    const blob = new Blob([u8arr], { type: mime });
+    return new File([blob], filename, { type: mime });
+  };
+
+  const handleSaveQR = async () => {
     if (!qrDataUrl) {
-      alert("QR code is still generating. Please try again in a moment.");
+      alert("QR code is still loading. Please try again.");
       return;
     }
 
-    // 1. Create temporary anchor element
-    const link = document.createElement("a");
-    link.download = `${visitor?.name ? visitor.name.replace(/\s+/g, "_") : "library"}_qr.png`;
-    link.href = qrDataUrl;
+    const fileName = `${visitor?.name ? visitor.name.replace(/\s+/g, "_") : "library"}_qr.png`;
 
-    // 2. MUST append to document body for mobile/Safari browser support
-    document.body.appendChild(link);
-    link.click();
+    try {
+      // 1. Convert base64 QR to a physical PNG File
+      const file = dataUrlToFile(qrDataUrl, fileName);
 
-    // 3. Clean up element
-    document.body.removeChild(link);
+      // 2. MOBILE NATIVE METHOD: Triggers iOS Safari / Android share sheet ("Save Image" to Photos)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: "Library QR Pass",
+          text: "My Library Visitor QR Pass",
+        });
+        return;
+      }
+
+      // 3. DESKTOP FALLBACK: Download using Blob URL
+      const blobUrl = URL.createObjectURL(file);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(blobUrl);
+
+    } catch (error) {
+      // Ignore errors caused by the user closing the native share menu
+      if (error.name !== "AbortError") {
+        console.error("Error saving QR code:", error);
+
+        // 4. IN-APP BROWSER FALLBACK: Open image in new tab for manual long-press saving
+        const imageWindow = window.open();
+        if (imageWindow) {
+          imageWindow.document.write(
+            `<body style="margin:0; display:flex; justify-content:center; align-items:center; height:100vh; background:#f0f0f0;">
+              <img src="${qrDataUrl}" alt="QR Code" style="max-width:80%; height:auto;" />
+            </body>`
+          );
+        }
+      }
+    }
   };
 
   if (!visitor) return <div className="p-4 text-center">Loading...</div>;
@@ -116,17 +161,22 @@ export default function QRPass() {
         </div>
 
         <div className="flex gap-3 mt-2">
-          <button 
-            onClick={handleSaveQR} 
+          <button
+            onClick={handleSaveQR}
             className="flex-1 bg-white border border-gray-200 text-gray-600 py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 active:bg-gray-100"
           >
             <Download className="w-4 h-4" /> Save QR
           </button>
-          <Link to="/mobile/home" className="flex-1 bg-[#1B3A6B] text-white py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
+          <Link
+            to="/mobile/home"
+            className="flex-1 bg-[#1B3A6B] text-white py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1"
+          >
             <Home className="w-4 h-4" /> Go to Home
           </Link>
         </div>
-        <p className="text-center text-gray-400 text-xs mt-3">Save your QR code or note your reference number for future visits.</p>
+        <p className="text-center text-gray-400 text-xs mt-3">
+          Save your QR code or note your reference number for future visits.
+        </p>
       </div>
     </>
   );
