@@ -17,16 +17,36 @@ export default function QRPass() {
     }
     const data = JSON.parse(stored);
     setVisitor(data);
-    QRCode.toDataURL(data.qr_url, (err, url) => {
-      if (!err) setQrDataUrl(url);
+
+    // Use qr_url, or fallback to reference_number / ID if qr_url is undefined
+    const qrText = data.qr_url || data.reference_number || data.id || "LIBRARY-PASS";
+
+    QRCode.toDataURL(qrText, { width: 300, margin: 2 }, (err, url) => {
+      if (err) {
+        console.error("Error generating QR code:", err);
+        return;
+      }
+      setQrDataUrl(url);
     });
   }, [navigate]);
 
   const handleSaveQR = () => {
+    if (!qrDataUrl) {
+      alert("QR code is still generating. Please try again in a moment.");
+      return;
+    }
+
+    // 1. Create temporary anchor element
     const link = document.createElement("a");
-    link.download = "library_qr.png";
+    link.download = `${visitor?.name ? visitor.name.replace(/\s+/g, "_") : "library"}_qr.png`;
     link.href = qrDataUrl;
+
+    // 2. MUST append to document body for mobile/Safari browser support
+    document.body.appendChild(link);
     link.click();
+
+    // 3. Clean up element
+    document.body.removeChild(link);
   };
 
   if (!visitor) return <div className="p-4 text-center">Loading...</div>;
@@ -61,7 +81,13 @@ export default function QRPass() {
 
           <div className="bg-[#F5F7FA] rounded-xl py-4 mb-3">
             <div className="bg-white p-3 rounded-xl shadow-inner flex justify-center">
-              {qrDataUrl && <img src={qrDataUrl} alt="QR Code" className="w-40 h-40" />}
+              {qrDataUrl ? (
+                <img src={qrDataUrl} alt="QR Code" className="w-40 h-40" />
+              ) : (
+                <div className="w-40 h-40 flex items-center justify-center text-xs text-gray-400">
+                  Generating QR...
+                </div>
+              )}
             </div>
             <p className="text-[#1B3A6B] text-xs font-semibold text-center mt-2">Scan to Check-In / Check-Out</p>
           </div>
@@ -89,9 +115,11 @@ export default function QRPass() {
           </div>
         </div>
 
-
         <div className="flex gap-3 mt-2">
-          <button onClick={handleSaveQR} className="flex-1 bg-white border border-gray-200 text-gray-600 py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
+          <button 
+            onClick={handleSaveQR} 
+            className="flex-1 bg-white border border-gray-200 text-gray-600 py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1 active:bg-gray-100"
+          >
             <Download className="w-4 h-4" /> Save QR
           </button>
           <Link to="/mobile/home" className="flex-1 bg-[#1B3A6B] text-white py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
