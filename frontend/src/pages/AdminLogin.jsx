@@ -1,21 +1,12 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { loginStaff } from "../api/api"; // Removed registerStaff
+import { loginStaff } from "../api/api";
 import { User, Lock, Shield, Eye, EyeOff, ChevronLeft } from "lucide-react";
 import logo from "../assets/logo.png";
-
-const positionOptions = [
-   "Head Librarian",
-   "Librarian",
-   "Assistant Librarian",
-   "Library Staff",
-   "Administrator",
-];
 
 export default function AdminLogin() {
    const navigate = useNavigate();
    const [username, setUsername] = useState("");
-   const [position, setPosition] = useState("");
    const [pin, setPin] = useState("");
    const [showPin, setShowPin] = useState(false);
    const [loading, setLoading] = useState(false);
@@ -26,10 +17,12 @@ export default function AdminLogin() {
       setLoading(true);
       setError("");
       try {
-         // Note: Ensure your backend loginStaff function accepts/validates 'position' if needed!
-         const data = await loginStaff(username, pin, position);
+         // Only passing username and pin now
+         const data = await loginStaff(username, pin);
+         
          localStorage.setItem("token", data.token);
          localStorage.setItem("staff", JSON.stringify(data.staff));
+         
          navigate("/admin/dashboard");
       } catch (err) {
          setError(err.message);
@@ -68,7 +61,7 @@ export default function AdminLogin() {
                      Staff Sign In
                   </h2>
                   <p className="text-gray-400 text-xs">
-                     Enter your credentials and position to access the system.
+                     Enter your credentials to access the system.
                   </p>
                </div>
 
@@ -84,24 +77,6 @@ export default function AdminLogin() {
                         required
                         className="w-full border border-gray-200 rounded-xl pl-10 pr-3 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
                      />
-                  </div>
-
-                  {/* Position Dropdown */}
-                  <div className="relative">
-                     <Shield className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                     <select
-                        value={position}
-                        onChange={(e) => setPosition(e.target.value)}
-                        required
-                        className="w-full border border-gray-200 rounded-xl pl-10 pr-3 py-3 text-sm appearance-none bg-white focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
-                     >
-                        <option value="">Select Position</option>
-                        {positionOptions.map((opt) => (
-                           <option key={opt} value={opt}>
-                              {opt}
-                           </option>
-                        ))}
-                     </select>
                   </div>
 
                   {/* PIN */}

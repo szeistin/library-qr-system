@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import QRCode from "qrcode";
-import { Download, Home, User, Hash, Target, CheckCircle } from "lucide-react";
+import { Download, Home, User, Hash, Target, CheckCircle, Copy, Check } from "lucide-react";
 
 export default function QRPass() {
   const navigate = useNavigate();
   const [visitor, setVisitor] = useState(null);
   const [qrDataUrl, setQrDataUrl] = useState("");
   const [scanned, setScanned] = useState(false);
+  const [copiedRef, setCopiedRef] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem("visitor");
@@ -44,6 +45,24 @@ export default function QRPass() {
     return new File([blob], filename, { type: mime });
   };
 
+  // Copy the reference number (with fallback for http / older browsers)
+  const handleCopyRef = async () => {
+    const text = visitor?.reference_number || "";
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopiedRef(true);
+    setTimeout(() => setCopiedRef(false), 2000);
+  };
+
   const handleSaveQR = async () => {
     if (!qrDataUrl) {
       alert("QR code is still loading. Please try again.");
@@ -75,7 +94,6 @@ export default function QRPass() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(blobUrl);
-
     } catch (error) {
       // Ignore errors caused by the user closing the native share menu
       if (error.name !== "AbortError") {
@@ -137,6 +155,7 @@ export default function QRPass() {
             <p className="text-[#1B3A6B] text-xs font-semibold text-center mt-2">Scan to Check-In / Check-Out</p>
           </div>
 
+          {/* Reference Number with copy button */}
           <div className="bg-[#1B3A6B] rounded-xl p-3 flex justify-between items-center mb-3">
             <div>
               <div className="flex items-center gap-1">
@@ -146,8 +165,22 @@ export default function QRPass() {
               <p className="text-white font-bold text-lg tracking-widest">{visitor.reference_number}</p>
             </div>
             <div className="text-right">
-              <p className="text-white text-xs">Use this number for</p>
-              <p className="text-white text-xs font-semibold">Assisted Check-In</p>
+              <button
+                type="button"
+                onClick={handleCopyRef}
+                className="flex items-center gap-1 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold px-3 py-1.5 rounded-lg ml-auto mb-1"
+              >
+                {copiedRef ? (
+                  <>
+                    <Check className="w-3 h-3" /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" /> Copy
+                  </>
+                )}
+              </button>
+              <p className="text-blue-200 text-[10px]">For Assisted Check-In</p>
             </div>
           </div>
 

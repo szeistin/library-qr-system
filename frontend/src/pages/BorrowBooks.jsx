@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { searchBooks, getCategories, getRecommendedBooks } from "../api/api";
 import { ArrowLeft, Search, ChevronDown, BookOpen, Star, Check } from "lucide-react";
@@ -16,16 +16,31 @@ export default function BorrowBooks() {
   const [loading, setLoading] = useState(false);
   const [selectedBooks, setSelectedBooks] = useState([]);
 
-  // Read state passed from VisitorHome recommendations click
+  // ─────────────────────────────────────────────────────────────
+  // ✅ Focus target — the book the user tapped on Home
+  // ─────────────────────────────────────────────────────────────
+  const focusBookId =
+    location.state?.focusBookId || location.state?.selectedBook?._id || null;
+  const cardRefs = useRef({});
+
+  // ─────────────────────────────────────────────────────────────
+  // Read state passed from VisitorHome (accept both "tab" and "activeTab")
+  // ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (location.state?.activeTab) {
-      setActiveTab(location.state.activeTab);
+    const incomingTab = location.state?.activeTab || location.state?.tab;
+    if (incomingTab) {
+      // Home sends "recommendations"; this page uses "recommended"
+      const normalized =
+        incomingTab === "recommendations" ? "recommended" : incomingTab;
+      setActiveTab(normalized);
     }
+
     if (location.state?.selectedBook) {
       const bookToSelect = location.state.selectedBook;
-      
-      // Auto-select the book if it's available
-      if (bookToSelect.available_copies === undefined || bookToSelect.available_copies > 0) {
+      if (
+        bookToSelect.available_copies === undefined ||
+        bookToSelect.available_copies > 0
+      ) {
         setSelectedBooks((prev) => {
           const alreadyExists = prev.some((b) => b._id === bookToSelect._id);
           if (!alreadyExists && prev.length < 3) {
@@ -35,7 +50,12 @@ export default function BorrowBooks() {
         });
       }
     }
-  }, [location.state]);
+
+    // ✅ Clear the category filter so the target book is guaranteed visible
+    if (focusBookId) {
+      setSelectedCategory("");
+    }
+  }, [location.state, focusBookId]);
 
   useEffect(() => {
     const stored = localStorage.getItem("visitor");
@@ -75,12 +95,39 @@ export default function BorrowBooks() {
     if (visitor?.dob) {
       getRecommendedBooks(visitor.dob)
         .then((data) => {
-          const sorted = [...data].sort((a, b) => a.title.localeCompare(b.title));
+          const sorted = [...data].sort((a, b) =>
+            a.title.localeCompare(b.title)
+          );
           setRecommended(sorted);
         })
         .catch(console.error);
     }
   }, [visitor]);
+
+  // ─────────────────────────────────────────────────────────────
+  // ✅ Scroll to the focused book once its card is rendered
+  // Runs every time any of the dependency values change, so it
+  // retries after books/recommended finish loading or the tab flips.
+  // ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!focusBookId) return;
+
+    const el = cardRefs.current[focusBookId];
+    if (!el) return; // not rendered yet — will retry when lists update
+
+    const t = setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-4", "ring-[#C9A227]");
+      setTimeout(() => {
+        el.classList.remove("ring-4", "ring-[#C9A227]");
+      }, 2200);
+
+      // ✅ prevent re-triggering on back navigation
+      window.history.replaceState({}, document.title);
+    }, 150);
+
+    return () => clearTimeout(t);
+  }, [focusBookId, activeTab, books, recommended, selectedCategory, loading]);
 
   const getFilteredBooks = () => {
     let list = [];
@@ -103,13 +150,13 @@ export default function BorrowBooks() {
     } else {
       allBooks = books.filter((b) => b.available_copies === 0);
     }
-    
+
     if (selectedCategory) {
       return null;
     }
 
     const grouped = {};
-    
+
     allBooks.forEach((book) => {
       const category = book.category || "Uncategorized";
       if (!grouped[category]) {
@@ -153,12 +200,14 @@ export default function BorrowBooks() {
 
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-gray-50 overflow-hidden">
-      
       {/* Header */}
       <div className="bg-[#1B3A6B] px-4 pt-4 pb-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="text-white/70 hover:text-white">
+            <button
+              onClick={() => navigate(-1)}
+              className="text-white/70 hover:text-white"
+            >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <div>
@@ -197,7 +246,9 @@ export default function BorrowBooks() {
           >
             <option value="">All Categories</option>
             {categories.map((cat) => (
-              <option key={cat} value={cat}>{cat}</option>
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
             ))}
           </select>
           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
@@ -215,7 +266,11 @@ export default function BorrowBooks() {
                   : "text-gray-500"
               }`}
             >
-              {tab === "available" ? "Available" : tab === "recommended" ? "Recommended" : "Unavailable"}
+              {tab === "available"
+                ? "Available"
+                : tab === "recommended"
+                  ? "Recommended"
+                  : "Unavailable"}
             </button>
           ))}
         </div>
@@ -239,23 +294,40 @@ export default function BorrowBooks() {
                     </div>
                     <div className="space-y-2">
                       {group.books.map((book) => {
-                        const isSelected = selectedBooks.some((b) => b._id === book._id);
+                        const isSelected = selectedBooks.some(
+                          (b) => b._id === book._id
+                        );
                         const isAvailable = book.available_copies > 0;
                         return (
                           <div
                             key={book._id}
-                            onClick={() => isAvailable && toggleBookSelection(book)}
+                            ref={(el) => {
+                              if (el) cardRefs.current[book._id] = el;
+                            }}
+                            onClick={() =>
+                              isAvailable && toggleBookSelection(book)
+                            }
                             className={`bg-white rounded-xl p-3 border-2 transition-all cursor-pointer ${
-                              isSelected ? "border-[#1B3A6B] shadow-md" : "border-gray-100"
-                            } ${!isAvailable ? "opacity-60 cursor-not-allowed" : ""}`}
+                              isSelected
+                                ? "border-[#1B3A6B] shadow-md"
+                                : "border-gray-100"
+                            } ${
+                              !isAvailable
+                                ? "opacity-60 cursor-not-allowed"
+                                : ""
+                            }`}
                           >
                             <div className="flex items-center gap-3">
                               <div className="w-9 h-12 bg-gradient-to-b from-[#1B3A6B] to-[#2a5298] rounded-lg flex items-center justify-center flex-shrink-0">
                                 <BookOpen className="w-4 h-4 text-white" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-[#1B3A6B] text-xs font-bold truncate">{book.title}</p>
-                                <p className="text-gray-400 text-xs">{book.author}</p>
+                                <p className="text-[#1B3A6B] text-xs font-bold truncate">
+                                  {book.title}
+                                </p>
+                                <p className="text-gray-400 text-xs">
+                                  {book.author}
+                                </p>
                                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                                   <span className="text-xs bg-[#EBF0F7] text-[#1B3A6B] px-2 py-0.5 rounded-full">
                                     {book.category}
@@ -263,11 +335,15 @@ export default function BorrowBooks() {
                                   {book.borrowCount > 0 && (
                                     <div className="flex items-center gap-0.5">
                                       <Star className="w-3 h-3 text-[#C9A227] fill-[#C9A227]" />
-                                      <span className="text-xs text-gray-500">{book.borrowCount} borrows</span>
+                                      <span className="text-xs text-gray-500">
+                                        {book.borrowCount} borrows
+                                      </span>
                                     </div>
                                   )}
                                   {isAvailable && (
-                                    <span className="text-xs text-gray-500">({book.available_copies} available)</span>
+                                    <span className="text-xs text-gray-500">
+                                      ({book.available_copies} available)
+                                    </span>
                                   )}
                                 </div>
                               </div>
@@ -275,10 +351,14 @@ export default function BorrowBooks() {
                                 isSelected ? (
                                   <Check className="w-5 h-5 text-[#1B3A6B] flex-shrink-0" />
                                 ) : (
-                                  <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full flex-shrink-0">Available</span>
+                                  <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                                    Available
+                                  </span>
                                 )
                               ) : (
-                                <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full flex-shrink-0">Unavailable</span>
+                                <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                                  Unavailable
+                                </span>
                               )}
                             </div>
                           </div>
@@ -288,53 +368,83 @@ export default function BorrowBooks() {
                   </div>
                 ))
               ) : (
-                <div className="text-center text-gray-400 text-sm py-8">No books found.</div>
+                <div className="text-center text-gray-400 text-sm py-8">
+                  No books found.
+                </div>
               )
             ) : null}
 
             {/* Flat Books Layout */}
-            {!showGrouped && (
-              flatBooks.length > 0 ? (
+            {!showGrouped &&
+              (flatBooks.length > 0 ? (
                 <div className="space-y-2">
                   {flatBooks.map((book) => {
-                    const isSelected = selectedBooks.some((b) => b._id === book._id);
-                    const isAvailable = book.available_copies === undefined || book.available_copies > 0;
+                    const isSelected = selectedBooks.some(
+                      (b) => b._id === book._id
+                    );
+                    const isAvailable =
+                      book.available_copies === undefined ||
+                      book.available_copies > 0;
                     return (
                       <div
                         key={book._id}
-                        onClick={() => isAvailable && toggleBookSelection(book)}
+                        ref={(el) => {
+                          if (el) cardRefs.current[book._id] = el;
+                        }}
+                        onClick={() =>
+                          isAvailable && toggleBookSelection(book)
+                        }
                         className={`bg-white rounded-xl p-3 border-2 transition-all cursor-pointer ${
-                          isSelected ? "border-[#1B3A6B] shadow-md" : "border-gray-100"
-                        } ${!isAvailable ? "opacity-60 cursor-not-allowed" : ""}`}
+                          isSelected
+                            ? "border-[#1B3A6B] shadow-md"
+                            : "border-gray-100"
+                        } ${
+                          !isAvailable ? "opacity-60 cursor-not-allowed" : ""
+                        }`}
                       >
                         <div className="flex items-center gap-3">
                           <div className="w-9 h-12 bg-gradient-to-b from-[#1B3A6B] to-[#2a5298] rounded-lg flex items-center justify-center flex-shrink-0">
                             <BookOpen className="w-4 h-4 text-white" />
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="text-[#1B3A6B] text-xs font-bold truncate">{book.title}</p>
-                            <p className="text-gray-400 text-xs">{book.author}</p>
+                            <p className="text-[#1B3A6B] text-xs font-bold truncate">
+                              {book.title}
+                            </p>
+                            <p className="text-gray-400 text-xs">
+                              {book.author}
+                            </p>
                             <div className="flex items-center gap-2 mt-1 flex-wrap">
-                              <span className="text-xs bg-[#EBF0F7] text-[#1B3A6B] px-2 py-0.5 rounded-full">{book.category}</span>
+                              <span className="text-xs bg-[#EBF0F7] text-[#1B3A6B] px-2 py-0.5 rounded-full">
+                                {book.category}
+                              </span>
                               {book.borrowCount > 0 && (
                                 <div className="flex items-center gap-0.5">
                                   <Star className="w-3 h-3 text-[#C9A227] fill-[#C9A227]" />
-                                  <span className="text-xs text-gray-500">{book.borrowCount} borrows</span>
+                                  <span className="text-xs text-gray-500">
+                                    {book.borrowCount} borrows
+                                  </span>
                                 </div>
                               )}
-                              {isAvailable && book.available_copies !== undefined && (
-                                <span className="text-xs text-gray-500">({book.available_copies} available)</span>
-                              )}
+                              {isAvailable &&
+                                book.available_copies !== undefined && (
+                                  <span className="text-xs text-gray-500">
+                                    ({book.available_copies} available)
+                                  </span>
+                                )}
                             </div>
                           </div>
                           {isAvailable ? (
                             isSelected ? (
                               <Check className="w-5 h-5 text-[#1B3A6B] flex-shrink-0" />
                             ) : (
-                              <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full flex-shrink-0">Available</span>
+                              <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                                Available
+                              </span>
                             )
                           ) : (
-                            <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full flex-shrink-0">Unavailable</span>
+                            <span className="text-xs text-red-500 bg-red-50 px-2 py-0.5 rounded-full flex-shrink-0">
+                              Unavailable
+                            </span>
                           )}
                         </div>
                       </div>
@@ -342,9 +452,10 @@ export default function BorrowBooks() {
                   })}
                 </div>
               ) : (
-                <div className="text-center text-gray-400 text-sm py-8">No books found.</div>
-              )
-            )}
+                <div className="text-center text-gray-400 text-sm py-8">
+                  No books found.
+                </div>
+              ))}
           </>
         )}
       </div>
@@ -356,7 +467,8 @@ export default function BorrowBooks() {
             onClick={handleBorrow}
             className="w-full bg-[#1B3A6B] text-white py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 shadow-sm active:scale-[0.98] transition-transform"
           >
-            <BookOpen className="w-4 h-4" /> Borrow Selected Books ({selectedBooks.length})
+            <BookOpen className="w-4 h-4" /> Borrow Selected Books (
+            {selectedBooks.length})
           </button>
         </div>
       )}

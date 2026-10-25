@@ -79,6 +79,7 @@ export default function CheckInForm() {
         profession: visitor.profession || "",
         purpose: visitor.purpose || "",
       });
+      setIsPWD(Boolean(visitor.isPWD));
       if (visitor.dob) {
         setDisplayDob(toDisplayFormat(visitor.dob.split("T")[0]));
       }
@@ -206,12 +207,11 @@ export default function CheckInForm() {
           </div>
           <div>
             <label className="text-xs text-gray-600 font-semibold uppercase tracking-wide mb-1 block">Gender *</label>
-            <select name="gender" value={formData.gender} onChange={handleChange} className={inputClass("gender")}>
-              <option value="">Select</option>
-              <option>Male</option>
-              <option>Female</option>
-              <option>Other</option>
-            </select>
+           <select name="gender" value={formData.gender} onChange={handleChange} className={inputClass("gender")}>
+  <option value="" disabled>Select gender</option>
+  <option value="Male">Male</option>
+  <option value="Female">Female</option>
+</select>
             {fieldErrors.gender && <p className="text-red-500 text-xs mt-0.5">{fieldErrors.gender}</p>}
           </div>
         </div>

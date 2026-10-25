@@ -25,7 +25,7 @@ function getAgeGroup(dob) {
    if (age >= 13 && age <= 21) return "Adolescents";
    if (age >= 22 && age <= 35) return "Young Adults";
    if (age >= 36) return "Adults";
-   return "PWD";
+   return "Under 6"; 
 }
 
 // =========================

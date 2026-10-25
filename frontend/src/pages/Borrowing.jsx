@@ -1,7 +1,18 @@
 import { useState, useEffect, useRef } from "react";
 import { format, isPast, isToday, isTomorrow, endOfDay } from "date-fns";
 import { Toaster, toast } from "sonner";
-import { Search, AlertTriangle, Bell, X, CheckCircle, Mail, QrCode, History, AlertCircle, Lock } from "lucide-react";
+import {
+  Search,
+  AlertTriangle,
+  Bell,
+  X,
+  CheckCircle,
+  Mail,
+  QrCode,
+  History,
+  AlertCircle,
+  Lock,
+} from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -19,14 +30,24 @@ export default function Borrowing() {
   const [activeTab, setActiveTab] = useState("active");
 
   // Modal States
-  const [returnModal, setReturnModal] = useState({ open: false, loan: null, issues: "", issueType: "" });
-  const [notReturnedModal, setNotReturnedModal] = useState({ open: false, loan: null, reasonOption: "", customReason: "" });
+  const [returnModal, setReturnModal] = useState({
+    open: false,
+    loan: null,
+    issues: "",
+    issueType: "",
+  });
+  const [notReturnedModal, setNotReturnedModal] = useState({
+    open: false,
+    loan: null,
+    reasonOption: "",
+    customReason: "",
+  });
 
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [confirmInput, setConfirmInput] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // ✅ FIX: separate loading state per reminder to prevent multiple clicks
+  // Per-loan reminder loading state
   const [reminderLoading, setReminderLoading] = useState({});
 
   const confirmScannerRef = useRef(null);
@@ -35,16 +56,22 @@ export default function Borrowing() {
   const lastScanTime = useRef(0);
 
   const token = localStorage.getItem("token");
-  const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const headers = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  };
 
   const notReturnedReasons = [
     "Misplaced or missing (Fault of user)",
     "Unretrievable due to natural disaster (Flood, Fire, etc.)",
     "User unreachable / Refused return",
     "Severely damaged beyond use",
-    "Other"
+    "Other",
   ];
 
+  // ─────────────────────────────────────────────────────────────
+  // PIN gate
+  // ─────────────────────────────────────────────────────────────
   const handlePinSubmit = async (e) => {
     e.preventDefault();
     if (pinInput.length !== 4) {
@@ -70,6 +97,9 @@ export default function Borrowing() {
     }
   };
 
+  // ─────────────────────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────────────────────
   const formatDateSafe = (dateVal, formatStr = "PPP") => {
     if (!dateVal) return "—";
     const d = new Date(dateVal);
@@ -80,21 +110,23 @@ export default function Borrowing() {
     try {
       const res = await fetch(`${API_URL}/loans/active`, { headers });
       if (res.ok) {
-        let data = await res.json();
+        const data = await res.json();
         if (Array.isArray(data)) {
           data.sort((a, b) => new Date(a.due_date || 0) - new Date(b.due_date || 0));
           setActiveLoans(data);
           setFilteredActive(data);
         }
       }
-    } catch (err) { console.error("Error fetching active loans:", err); }
+    } catch (err) {
+      console.error("Error fetching active borrowed books:", err);
+    }
   };
 
   const fetchHistoryLoans = async () => {
     try {
       const res = await fetch(`${API_URL}/loans/history`, { headers });
       if (res.ok) {
-        let data = await res.json();
+        const data = await res.json();
         if (Array.isArray(data)) {
           data.sort((a, b) => {
             const dateA = a.return_date ? new Date(a.return_date) : new Date(a.borrow_date || 0);
@@ -105,7 +137,9 @@ export default function Borrowing() {
           setFilteredHistory(data);
         }
       }
-    } catch (err) { console.error("Error fetching history loans:", err); }
+    } catch (err) {
+      console.error("Error fetching history borrowed books:", err);
+    }
   };
 
   useEffect(() => {
@@ -113,11 +147,13 @@ export default function Borrowing() {
       fetchActiveLoans();
       fetchHistoryLoans();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnlocked]);
 
+  // Search filter
   useEffect(() => {
     const term = searchTerm.toLowerCase().trim();
-    const filterFn = loan => {
+    const filterFn = (loan) => {
       if (!term) return true;
       const title = loan.book?.title?.toLowerCase() || "";
       const visitorName = loan.visitor?.name?.toLowerCase() || "";
@@ -130,8 +166,12 @@ export default function Borrowing() {
     }
   }, [searchTerm, activeLoans, historyLoans, activeTab]);
 
+  // ─────────────────────────────────────────────────────────────
+  // QR scanner (unchanged — still calls handleConfirmBorrow)
+  // ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!isUnlocked) return;
+
     const startConfirmScanner = async () => {
       if (!confirmScannerRef.current) return;
       if (confirmScannerInstance.current) return;
@@ -145,9 +185,12 @@ export default function Borrowing() {
             if (decodedText === lastScannedToken.current && now - lastScanTime.current < 2000) return;
             lastScannedToken.current = decodedText;
             lastScanTime.current = now;
+
+            // If someone points at a legacy /qr/:token URL, extract the token
             let scanToken = decodedText;
-            const match = decodedText.match(/\/api\/loans\/qr\/([a-f0-9]+)/);
+            const match = decodedText.match(/\/api\/loans\/qr\/([a-zA-Z0-9._-]+)/);
             if (match) scanToken = match[1];
+
             handleConfirmBorrow(scanToken);
           },
           (error) => console.warn(error)
@@ -162,16 +205,21 @@ export default function Borrowing() {
         toast.error("Could not access camera. Please check permissions.");
       }
     };
+
     startConfirmScanner();
+
     return () => {
       if (confirmScannerInstance.current) {
         confirmScannerInstance.current.stop().catch(console.warn);
         confirmScannerInstance.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnlocked]);
 
-  // ✅ PIN Gate
+  // ─────────────────────────────────────────────────────────────
+  // PIN Gate (early return)
+  // ─────────────────────────────────────────────────────────────
   if (!isUnlocked) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] p-4">
@@ -182,7 +230,9 @@ export default function Borrowing() {
           </div>
           <div>
             <h3 className="font-bold text-gray-800 text-base">Restricted Access</h3>
-            <p className="text-xs text-gray-500 mt-1">Enter your 4-digit staff PIN to access borrowing management</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Enter your 4-digit staff PIN to access borrowing management
+            </p>
           </div>
           <form onSubmit={handlePinSubmit} className="space-y-3">
             <input
@@ -207,28 +257,63 @@ export default function Borrowing() {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────
+  // Confirm borrow (JWT-based — nothing saved until scan)
+  // ─────────────────────────────────────────────────────────────
   const handleConfirmBorrow = async (borrowTokenOrTokens) => {
     if (!borrowTokenOrTokens) return;
     setLoading(true);
     try {
-      const tokens = borrowTokenOrTokens.split(",").map(t => t.trim()).filter(t => t);
+      // Support comma-joined JWTs (multi-book borrow)
+      const tokens = borrowTokenOrTokens
+        .split(",")
+        .map((t) => t.trim())
+        .filter(Boolean);
+
       let successCount = 0;
       let errorCount = 0;
+      let expiredCount = 0;
+      let lastErrorMessage = "";
+
       for (const t of tokens) {
         try {
-          const res = await fetch(`${API_URL}/loans/confirm/${t}`, { method: "POST", headers });
-          if (!res.ok) throw new Error(await res.text());
+          const res = await fetch(`${API_URL}/loans/confirm/${t}`, {
+            method: "POST",
+            headers,
+          });
+
+          if (res.status === 410) {
+            expiredCount++;
+            continue;
+          }
+
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            lastErrorMessage = data.error || "Failed to confirm";
+            throw new Error(lastErrorMessage);
+          }
+
           successCount++;
         } catch (err) {
           errorCount++;
           console.error(`Failed for token ${t}:`, err.message);
         }
       }
+
       if (successCount > 0) {
-        toast.success(`${successCount} borrowed book(s) confirmed.${errorCount > 0 ? ` ${errorCount} failed.` : ""}`);
+        toast.success(
+          `${successCount} borrowed book(s) confirmed.` +
+            (errorCount > 0 ? ` ${errorCount} failed.` : "") +
+            (expiredCount > 0 ? ` ${expiredCount} expired.` : "")
+        );
+      } else if (expiredCount > 0 && errorCount === 0) {
+        toast.error("Borrow QR expired. Ask the visitor to re-request borrowing.");
+      } else if (errorCount > 0) {
+        toast.error(lastErrorMessage || "No borrows confirmed. Check tokens.");
       } else {
-        toast.error("No loans confirmed. Check tokens.");
+        toast.error("No borrows confirmed. Check tokens.");
       }
+
       fetchActiveLoans();
       fetchHistoryLoans();
       setConfirmInput("");
@@ -239,15 +324,24 @@ export default function Borrowing() {
     }
   };
 
-  const handleReturnBook = async (borrowToken, issues = "") => {
-    if (!borrowToken) return;
+  // ─────────────────────────────────────────────────────────────
+  // Return / Not returned / Reminder / Retrieve
+  // ─────────────────────────────────────────────────────────────
+   const handleReturnBook = async (borrowToken, issues = "") => {
+    if (!borrowToken && !returnModal.loan?._id) return;
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}/loans/return`, {
         method: "POST", headers,
-        body: JSON.stringify({ borrow_qr_token: borrowToken, issues })
+        body: JSON.stringify({ 
+          borrow_qr_token: borrowToken, 
+          loan_id: returnModal.loan?._id, // ✅ Fallback ID
+          issues 
+        })
       });
-      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to return book");
+      
       toast.success("Book returned successfully");
       fetchActiveLoans();
       fetchHistoryLoans();
@@ -259,12 +353,13 @@ export default function Borrowing() {
     }
   };
 
-  const handleConfirmNotReturned = async () => {
-    if (!notReturnedModal.loan?.borrow_qr_token) return;
+    const handleConfirmNotReturned = async () => {
+    if (!notReturnedModal.loan?._id) return;
     if (!notReturnedModal.reasonOption) {
       toast.error("Please select a reason why the book was not returned.");
       return;
     }
+    
     let finalReason = notReturnedModal.reasonOption;
     if (notReturnedModal.reasonOption === "Other" || notReturnedModal.customReason.trim()) {
       if (notReturnedModal.reasonOption === "Other" && !notReturnedModal.customReason.trim()) {
@@ -275,15 +370,20 @@ export default function Borrowing() {
         ? `Other: ${notReturnedModal.customReason}`
         : `${notReturnedModal.reasonOption} (${notReturnedModal.customReason})`;
     }
+
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/loans/not-returned/${notReturnedModal.loan.borrow_qr_token}`, {
+      // ✅ Uses ._id instead of borrow_qr_token
+      const res = await fetch(`${API_URL}/loans/not-returned/${notReturnedModal.loan._id}`, {
         method: "POST",
         headers,
         body: JSON.stringify({ reason: finalReason }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      toast.success("Book marked as not returned");
+      
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to mark as not returned");
+      
+      toast.success("Book marked as not returned. User is now restricted.");
       fetchActiveLoans();
       fetchHistoryLoans();
       setNotReturnedModal({ open: false, loan: null, reasonOption: "", customReason: "" });
@@ -294,30 +394,44 @@ export default function Borrowing() {
     }
   };
 
-  // ✅ FIX: disabled while sending, shows real error, prevents multiple clicks
   const handleSendReminder = async (loan) => {
     if (loan.reminder_sent || reminderLoading[loan._id]) return;
-    setReminderLoading(prev => ({ ...prev, [loan._id]: true }));
+    setReminderLoading((prev) => ({ ...prev, [loan._id]: true }));
     try {
-      const res = await fetch(`${API_URL}/loans/${loan._id}/reminder`, { method: "POST", headers });
+      const res = await fetch(`${API_URL}/loans/${loan._id}/reminder`, {
+        method: "POST",
+        headers,
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to send reminder");
-      setActiveLoans(prev =>
-        prev.map(item => item._id === loan._id ? { ...item, reminder_sent: true } : item)
+      setActiveLoans((prev) =>
+        prev.map((item) =>
+          item._id === loan._id ? { ...item, reminder_sent: true } : item
+        )
       );
-      toast.success(`Reminder sent to ${loan.email || loan.visitor?.email || "borrower"}`);
+      toast.success(
+        `Reminder sent to ${loan.email || loan.visitor?.email || "borrower"}`
+      );
     } catch (err) {
       toast.error(err.message);
     } finally {
-      setReminderLoading(prev => ({ ...prev, [loan._id]: false }));
+      setReminderLoading((prev) => ({ ...prev, [loan._id]: false }));
     }
   };
 
   const handleRetrieve = async (loan) => {
-    if (!window.confirm(`Retrieve "${loan.book?.title || "this book"}"? It will become active again and you can process a proper return.`)) return;
+    if (
+      !window.confirm(
+        `Retrieve "${loan.book?.title || "this book"}"? It will become active again and you can process a proper return.`
+      )
+    )
+      return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_URL}/loans/retrieve/${loan._id}`, { method: "POST", headers });
+      const res = await fetch(`${API_URL}/loans/retrieve/${loan._id}`, {
+        method: "POST",
+        headers,
+      });
       if (!res.ok) throw new Error(await res.text());
       toast.success("Loan retrieved back to active");
       fetchActiveLoans();
@@ -329,8 +443,15 @@ export default function Borrowing() {
     }
   };
 
-  const openReturnModal = (loan) => setReturnModal({ open: true, loan, issues: "", issueType: "" });
-  const openNotReturnedModal = (loan) => setNotReturnedModal({ open: true, loan, reasonOption: "", customReason: "" });
+  const openReturnModal = (loan) =>
+    setReturnModal({ open: true, loan, issues: "", issueType: "" });
+  const openNotReturnedModal = (loan) =>
+    setNotReturnedModal({
+      open: true,
+      loan,
+      reasonOption: "",
+      customReason: "",
+    });
 
   const handleConfirmReturn = () => {
     if (returnModal.issueType === "yes") {
@@ -346,17 +467,40 @@ export default function Borrowing() {
     }
   };
 
-  const issueOptions = ["Missing/Lost", "Torn pages", "Water damage", "Vandalized", "Cover torn"];
+  const issueOptions = [
+    "Missing/Lost",
+    "Torn pages",
+    "Water damage",
+    "Vandalized",
+    "Cover torn",
+  ];
 
-  const overdueLoans = activeLoans.filter(l => l.due_date && isPast(endOfDay(new Date(l.due_date))) && l.status !== "returned" && l.status !== "not_returned");
-  const dueTodayLoans = activeLoans.filter(l => l.due_date && isToday(new Date(l.due_date)) && l.status === "borrowed");
-  const dueTomorrowLoans = activeLoans.filter(l => l.due_date && isTomorrow(new Date(l.due_date)) && l.status === "borrowed");
-  const alertCount = overdueLoans.length + dueTodayLoans.length + dueTomorrowLoans.length;
+  const overdueLoans = activeLoans.filter(
+    (l) =>
+      l.due_date &&
+      isPast(endOfDay(new Date(l.due_date))) &&
+      l.status !== "returned" &&
+      l.status !== "not_returned"
+  );
+  const dueTodayLoans = activeLoans.filter(
+    (l) => l.due_date && isToday(new Date(l.due_date)) && l.status === "borrowed"
+  );
+  const dueTomorrowLoans = activeLoans.filter(
+    (l) =>
+      l.due_date &&
+      isTomorrow(new Date(l.due_date)) &&
+      l.status === "borrowed"
+  );
+  const alertCount =
+    overdueLoans.length + dueTodayLoans.length + dueTomorrowLoans.length;
 
-  // ✅ FIX: Reminder button component to avoid repetition
   const ReminderButton = ({ loan }) => {
     if (loan.reminder_sent) {
-      return <span className="text-green-600 text-[11px] flex items-center justify-center gap-1"><CheckCircle className="w-3 h-3" /> Reminder Sent</span>;
+      return (
+        <span className="text-green-600 text-[11px] flex items-center justify-center gap-1">
+          <CheckCircle className="w-3 h-3" /> Reminder Sent
+        </span>
+      );
     }
     return (
       <button
@@ -370,6 +514,9 @@ export default function Borrowing() {
     );
   };
 
+  // ─────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────
   return (
     <div className="p-4 md:p-6 space-y-5">
       <Toaster position="top-right" />
@@ -378,10 +525,18 @@ export default function Borrowing() {
         <div className="bg-red-50 border border-red-200 rounded-2xl p-4 flex justify-between items-center">
           <div className="flex items-center gap-2">
             <AlertTriangle className="text-red-600 w-5 h-5 shrink-0" />
-            <span className="font-bold text-red-700">{overdueLoans.length} Overdue • {dueTodayLoans.length} Due Today • {dueTomorrowLoans.length} Due Tomorrow</span>
-            <span className="text-sm text-red-700 hidden md:inline">The system will send email reminders on due date.</span>
+            <span className="font-bold text-red-700">
+              {overdueLoans.length} Overdue • {dueTodayLoans.length} Due Today •{" "}
+              {dueTomorrowLoans.length} Due Tomorrow
+            </span>
+            <span className="text-sm text-red-700 hidden md:inline">
+              The system will send email reminders on due date.
+            </span>
           </div>
-          <button onClick={() => setShowNotificationPanel(true)} className="bg-red-600 text-white px-3 py-1 rounded-xl flex items-center gap-1 text-sm">
+          <button
+            onClick={() => setShowNotificationPanel(true)}
+            className="bg-red-600 text-white px-3 py-1 rounded-xl flex items-center gap-1 text-sm"
+          >
             <Bell className="w-4 h-4" /> View All
           </button>
         </div>
@@ -394,20 +549,28 @@ export default function Borrowing() {
               <QrCode className="w-4 h-4 text-[#1B3A6B]" />
             </div>
             <div>
-              <h3 className="text-[#1B3A6B] font-bold text-sm">Confirm Borrow QR</h3>
-              <p className="text-gray-400 text-xs">Scan visitor's borrow QR to activate loan</p>
+              <h3 className="text-[#1B3A6B] font-bold text-sm">
+                Confirm Borrow QR
+              </h3>
+              <p className="text-gray-400 text-xs">
+                Scan visitor's borrow QR to activate loan
+              </p>
             </div>
           </div>
           <div className="bg-gray-900 rounded-xl w-full overflow-hidden aspect-video">
-            <div id="confirm-scanner-container" ref={confirmScannerRef} className="w-full h-full"></div>
+            <div
+              id="confirm-scanner-container"
+              ref={confirmScannerRef}
+              className="w-full h-full"
+            ></div>
           </div>
           <div className="flex gap-2 mt-3">
             <input
               className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-xs"
               placeholder="Paste borrow QR token"
               value={confirmInput}
-              onChange={e => setConfirmInput(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleConfirmBorrow(confirmInput)}
+              onChange={(e) => setConfirmInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleConfirmBorrow(confirmInput)}
             />
             <button
               onClick={() => handleConfirmBorrow(confirmInput)}
@@ -422,12 +585,36 @@ export default function Borrowing() {
         <div className="space-y-4">
           <div className="flex flex-wrap justify-between items-center gap-3 bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
             <div className="flex gap-2">
-              <button onClick={() => setActiveTab("active")} className={`px-4 py-1.5 rounded-full text-sm font-semibold ${activeTab === "active" ? "bg-[#1B3A6B] text-white" : "bg-gray-200 text-gray-700"}`}>Active Loans</button>
-              <button onClick={() => setActiveTab("history")} className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1 ${activeTab === "history" ? "bg-[#1B3A6B] text-white" : "bg-gray-200 text-gray-700"}`}><History className="w-4 h-4" /> History</button>
+              <button
+                onClick={() => setActiveTab("active")}
+                className={`px-4 py-1.5 rounded-full text-sm font-semibold ${
+                  activeTab === "active"
+                    ? "bg-[#1B3A6B] text-white"
+                    : "bg-gray-200 text-gray-700"
+                }`}
+              >
+                Active Borrows
+              </button>
+              <button
+                onClick={() => setActiveTab("history")}
+                className={`px-4 py-1.5 rounded-full text-sm font-semibold flex items-center gap-1 ${
+                  activeTab === "history"
+                    ? "bg-[#1B3A6B] text-white"
+                    : "bg-gray-200 text-gray-700"
+                }`}
+              >
+                <History className="w-4 h-4" /> History
+              </button>
             </div>
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-              <input type="text" placeholder="Search book or borrower..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="pl-8 pr-3 py-1.5 border border-gray-200 rounded-xl text-xs w-48 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]" />
+              <input
+                type="text"
+                placeholder="Search book or borrower..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-8 pr-3 py-1.5 border border-gray-200 rounded-xl text-xs w-48 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
+              />
             </div>
           </div>
 
@@ -445,25 +632,55 @@ export default function Borrowing() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredActive.map(loan => {
+                    {filteredActive.map((loan) => {
                       const due = loan.due_date ? new Date(loan.due_date) : null;
-                      const isLoanOverdue = due && isPast(endOfDay(due)) && loan.status !== "returned" && loan.status !== "not_returned";
+                      const isLoanOverdue =
+                        due &&
+                        isPast(endOfDay(due)) &&
+                        loan.status !== "returned" &&
+                        loan.status !== "not_returned";
                       const isNotReturned = loan.status === "not_returned";
-                      const isUserSuspended = loan.visitor?.is_suspended || loan.visitor?.status === "blocked";
+                      const isUserSuspended =
+                        loan.visitor?.is_suspended ||
+                        loan.visitor?.status === "blocked";
 
-                      let statusText = "Borrowed", statusClass = "text-blue-600 bg-blue-50";
-                      if (loan.status === "returned") { statusText = "Returned"; statusClass = "text-green-600 bg-green-50"; }
-                      else if (isNotReturned) { statusText = "Not Returned"; statusClass = "text-red-600 bg-red-50 font-bold"; }
-                      else if (isLoanOverdue) { statusText = "Overdue"; statusClass = "text-red-600 bg-red-50 font-bold"; }
-                      else if (due && isToday(due)) { statusText = "Due Today"; statusClass = "text-orange-600 bg-orange-50 font-bold animate-pulse"; }
-                      else if (due && isTomorrow(due)) { statusText = "Due Tomorrow"; statusClass = "text-yellow-600 bg-yellow-50"; }
+                      let statusText = "Borrowed",
+                        statusClass = "text-blue-600 bg-blue-50";
+                      if (loan.status === "returned") {
+                        statusText = "Returned";
+                        statusClass = "text-green-600 bg-green-50";
+                      } else if (isNotReturned) {
+                        statusText = "Not Returned";
+                        statusClass = "text-red-600 bg-red-50 font-bold";
+                      } else if (isLoanOverdue) {
+                        statusText = "Overdue";
+                        statusClass = "text-red-600 bg-red-50 font-bold";
+                      } else if (due && isToday(due)) {
+                        statusText = "Due Today";
+                        statusClass =
+                          "text-orange-600 bg-orange-50 font-bold animate-pulse";
+                      } else if (due && isTomorrow(due)) {
+                        statusText = "Due Tomorrow";
+                        statusClass = "text-yellow-600 bg-yellow-50";
+                      }
 
                       return (
-                        <tr key={loan._id} className="border-b hover:bg-gray-50">
+                        <tr
+                          key={loan._id}
+                          className="border-b hover:bg-gray-50"
+                        >
                           <td className="p-2">
-                            <span className="font-medium">{loan.book?.title || "Unknown Book"}</span>
-                            <div className="text-gray-400 text-[11px]">{loan.book?.author || "Unknown Author"}</div>
-                            {loan.return_issues && <div className="text-red-500 text-[11px]">⚠ {loan.return_issues}</div>}
+                            <span className="font-medium">
+                              {loan.book?.title || "Unknown Book"}
+                            </span>
+                            <div className="text-gray-400 text-[11px]">
+                              {loan.book?.author || "Unknown Author"}
+                            </div>
+                            {loan.return_issues && (
+                              <div className="text-red-500 text-[11px]">
+                                ⚠ {loan.return_issues}
+                              </div>
+                            )}
                           </td>
                           <td className="p-2">
                             <div className="font-medium flex items-center gap-1">
@@ -474,24 +691,53 @@ export default function Borrowing() {
                                 </span>
                               )}
                             </div>
-                            <div className="text-gray-400 text-[11px]">{loan.email || loan.visitor?.email}<br />{loan.phone || loan.visitor?.phone}</div>
+                            <div className="text-gray-400 text-[11px]">
+                              {loan.email || loan.visitor?.email}
+                              <br />
+                              {loan.phone || loan.visitor?.phone}
+                            </div>
                           </td>
                           <td className="p-2">{formatDateSafe(loan.due_date)}</td>
-                          <td className="p-2"><span className={`text-[11px] px-2 py-0.5 rounded-full ${statusClass}`}>{statusText}</span></td>
+                          <td className="p-2">
+                            <span
+                              className={`text-[11px] px-2 py-0.5 rounded-full ${statusClass}`}
+                            >
+                              {statusText}
+                            </span>
+                          </td>
                           <td className="p-2 space-y-1">
-                            {loan.status !== "returned" && loan.status !== "not_returned" && (
-                              <>
-                                <button onClick={() => openReturnModal(loan)} className="bg-blue-600 text-white text-[11px] px-2 py-1 rounded w-full">Mark Returned</button>
-                                <button onClick={() => openNotReturnedModal(loan)} className="bg-red-600 text-white text-[11px] px-2 py-1 rounded w-full">Not Returned</button>
-                                {/* ✅ FIX: uses ReminderButton with disabled state */}
-                                <ReminderButton loan={loan} />
-                              </>
-                            )}
+                            {loan.status !== "returned" &&
+                              loan.status !== "not_returned" && (
+                                <>
+                                  <button
+                                    onClick={() => openReturnModal(loan)}
+                                    className="bg-blue-600 text-white text-[11px] px-2 py-1 rounded w-full"
+                                  >
+                                    Mark Returned
+                                  </button>
+                                  <button
+                                    onClick={() => openNotReturnedModal(loan)}
+                                    className="bg-red-600 text-white text-[11px] px-2 py-1 rounded w-full"
+                                  >
+                                    Not Returned
+                                  </button>
+                                  <ReminderButton loan={loan} />
+                                </>
+                              )}
                           </td>
                         </tr>
                       );
                     })}
-                    {filteredActive.length === 0 && <tr><td colSpan={5} className="text-center text-gray-400 py-4">No active loans found.</td></tr>}
+                    {filteredActive.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="text-center text-gray-400 py-4"
+                        >
+                          No active borrows found.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -513,20 +759,35 @@ export default function Borrowing() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredHistory.map(loan => {
-                      const statusText = loan.status === "returned" ? "Returned" : "Not Returned";
-                      const statusClass = loan.status === "returned" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700";
-                      const isUserSuspended = loan.visitor?.is_suspended || loan.visitor?.status === "blocked";
+                    {filteredHistory.map((loan) => {
+                      const statusText =
+                        loan.status === "returned" ? "Returned" : "Not Returned";
+                      const statusClass =
+                        loan.status === "returned"
+                          ? "bg-green-100 text-green-700"
+                          : "bg-red-100 text-red-700";
+                      const isUserSuspended =
+                        loan.visitor?.is_suspended ||
+                        loan.visitor?.status === "blocked";
 
                       return (
-                        <tr key={loan._id} className="border-b hover:bg-gray-50">
+                        <tr
+                          key={loan._id}
+                          className="border-b hover:bg-gray-50"
+                        >
                           <td className="p-2">
-                            <span className="font-medium">{loan.book?.title || "Unknown Book"}</span>
-                            <div className="text-gray-400 text-[11px]">{loan.book?.author || "Unknown Author"}</div>
-                            {/* ✅ FIX: show return_issues (correct field name from backend) */}
-                            {loan.return_issues && loan.return_issues !== "Not returned" && (
-                              <div className="text-red-500 text-[11px]">⚠ {loan.return_issues}</div>
-                            )}
+                            <span className="font-medium">
+                              {loan.book?.title || "Unknown Book"}
+                            </span>
+                            <div className="text-gray-400 text-[11px]">
+                              {loan.book?.author || "Unknown Author"}
+                            </div>
+                            {loan.return_issues &&
+                              loan.return_issues !== "Not returned" && (
+                                <div className="text-red-500 text-[11px]">
+                                  ⚠ {loan.return_issues}
+                                </div>
+                              )}
                           </td>
                           <td className="p-2">
                             <div className="font-medium flex items-center gap-1">
@@ -537,24 +798,50 @@ export default function Borrowing() {
                                 </span>
                               )}
                             </div>
-                            <div className="text-gray-400 text-[11px]">{loan.email || loan.visitor?.email}<br />{loan.phone || loan.visitor?.phone}</div>
+                            <div className="text-gray-400 text-[11px]">
+                              {loan.email || loan.visitor?.email}
+                              <br />
+                              {loan.phone || loan.visitor?.phone}
+                            </div>
                           </td>
                           <td className="p-2">{formatDateSafe(loan.borrow_date)}</td>
                           <td className="p-2">{formatDateSafe(loan.return_date)}</td>
                           <td className="p-2">
-                            <span className={`text-[11px] px-2 py-0.5 rounded-full ${statusClass}`}>{statusText}</span>
-                            {/* ✅ FIX: use return_issues for not_returned reason (correct field) */}
-                            {loan.status === "not_returned" && loan.return_issues && (
-                              <div className="text-red-600 text-[10px] mt-1 italic">Reason: {loan.return_issues}</div>
-                            )}
+                            <span
+                              className={`text-[11px] px-2 py-0.5 rounded-full ${statusClass}`}
+                            >
+                              {statusText}
+                            </span>
+                            {loan.status === "not_returned" &&
+                              loan.return_issues && (
+                                <div className="text-red-600 text-[10px] mt-1 italic">
+                                  Reason: {loan.return_issues}
+                                </div>
+                              )}
                           </td>
                           <td className="p-2">
-                            <button onClick={() => handleRetrieve(loan)} className="bg-blue-600 text-white text-[11px] px-2 py-1 rounded w-full">Retrieve</button>
-                          </td>
+  {loan.status === "not_returned" && (
+    <button
+      onClick={() => handleRetrieve(loan)}
+      className="bg-blue-600 text-white text-[11px] px-2 py-1 rounded w-full"
+    >
+      Retrieve
+    </button>
+  )}
+</td>
                         </tr>
                       );
                     })}
-                    {filteredHistory.length === 0 && <tr><td colSpan={6} className="text-center text-gray-400 py-4">No history records found.</td></tr>}
+                    {filteredHistory.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan={6}
+                          className="text-center text-gray-400 py-4"
+                        >
+                          No history records found.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -568,17 +855,27 @@ export default function Borrowing() {
         <div className="fixed inset-0 bg-black/50 z-50 flex justify-end">
           <div className="bg-white w-full max-w-sm h-full shadow-xl flex flex-col">
             <div className="bg-red-600 text-white p-4 flex justify-between items-center">
-              <div className="flex items-center gap-2"><Bell className="w-5 h-5" /> Reminders ({alertCount})</div>
-              <button onClick={() => setShowNotificationPanel(false)}><X className="w-5 h-5" /></button>
+              <div className="flex items-center gap-2">
+                <Bell className="w-5 h-5" /> Reminders ({alertCount})
+              </div>
+              <button onClick={() => setShowNotificationPanel(false)}>
+                <X className="w-5 h-5" />
+              </button>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
               {overdueLoans.length > 0 && (
                 <div>
-                  <div className="bg-red-50 p-2 font-bold text-red-700 rounded">🚨 OVERDUE</div>
-                  {overdueLoans.map(l => (
+                  <div className="bg-red-50 p-2 font-bold text-red-700 rounded">
+                    🚨 OVERDUE
+                  </div>
+                  {overdueLoans.map((l) => (
                     <div key={l._id} className="border-b py-2 text-xs">
                       <div className="font-medium">{l.book?.title}</div>
-                      <div className="text-gray-500">{l.visitor?.name} | {l.email || l.visitor?.email}<br />Due: {formatDateSafe(l.due_date)}</div>
+                      <div className="text-gray-500">
+                        {l.visitor?.name} | {l.email || l.visitor?.email}
+                        <br />
+                        Due: {formatDateSafe(l.due_date)}
+                      </div>
                       <ReminderButton loan={l} />
                     </div>
                   ))}
@@ -586,11 +883,15 @@ export default function Borrowing() {
               )}
               {dueTodayLoans.length > 0 && (
                 <div>
-                  <div className="bg-orange-50 p-2 font-bold text-orange-700 rounded">⏰ DUE TODAY</div>
-                  {dueTodayLoans.map(l => (
+                  <div className="bg-orange-50 p-2 font-bold text-orange-700 rounded">
+                    ⏰ DUE TODAY
+                  </div>
+                  {dueTodayLoans.map((l) => (
                     <div key={l._id} className="border-b py-2 text-xs">
                       <div className="font-medium">{l.book?.title}</div>
-                      <div className="text-gray-500">{l.visitor?.name} | {l.email || l.visitor?.email}</div>
+                      <div className="text-gray-500">
+                        {l.visitor?.name} | {l.email || l.visitor?.email}
+                      </div>
                       <ReminderButton loan={l} />
                     </div>
                   ))}
@@ -598,11 +899,15 @@ export default function Borrowing() {
               )}
               {dueTomorrowLoans.length > 0 && (
                 <div>
-                  <div className="bg-yellow-50 p-2 font-bold text-yellow-700 rounded">📅 DUE TOMORROW</div>
-                  {dueTomorrowLoans.map(l => (
+                  <div className="bg-yellow-50 p-2 font-bold text-yellow-700 rounded">
+                    📅 DUE TOMORROW
+                  </div>
+                  {dueTomorrowLoans.map((l) => (
                     <div key={l._id} className="border-b py-2 text-xs">
                       <div className="font-medium">{l.book?.title}</div>
-                      <div className="text-gray-500">{l.visitor?.name} | {l.email || l.visitor?.email}</div>
+                      <div className="text-gray-500">
+                        {l.visitor?.name} | {l.email || l.visitor?.email}
+                      </div>
                       <ReminderButton loan={l} />
                     </div>
                   ))}
@@ -618,28 +923,112 @@ export default function Borrowing() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full p-5">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="text-lg font-bold">Return: {returnModal.loan?.book?.title || "Book"}</h3>
-              <button onClick={() => setReturnModal({ open: false, loan: null, issues: "", issueType: "" })}><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-bold">
+                Return: {returnModal.loan?.book?.title || "Book"}
+              </h3>
+              <button
+                onClick={() =>
+                  setReturnModal({
+                    open: false,
+                    loan: null,
+                    issues: "",
+                    issueType: "",
+                  })
+                }
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <p className="text-sm text-gray-600 mb-3">Is there an issue with the returned book?</p>
+            <p className="text-sm text-gray-600 mb-3">
+              Is there an issue with the returned book?
+            </p>
             <div className="flex gap-3 mb-3">
-              <button onClick={() => setReturnModal({ ...returnModal, issueType: "yes" })} className={`flex-1 py-2 rounded-lg border text-sm ${returnModal.issueType === "yes" ? "border-red-500 bg-red-50 text-red-700" : "border-gray-300"}`}>⚠ Yes, there is an issue</button>
-              <button onClick={() => setReturnModal({ ...returnModal, issueType: "no" })} className={`flex-1 py-2 rounded-lg border text-sm ${returnModal.issueType === "no" ? "border-green-500 bg-green-50 text-green-700" : "border-gray-300"}`}>✅ No issues</button>
+              <button
+                onClick={() =>
+                  setReturnModal({ ...returnModal, issueType: "yes" })
+                }
+                className={`flex-1 py-2 rounded-lg border text-sm ${
+                  returnModal.issueType === "yes"
+                    ? "border-red-500 bg-red-50 text-red-700"
+                    : "border-gray-300"
+                }`}
+              >
+                ⚠ Yes, there is an issue
+              </button>
+              <button
+                onClick={() =>
+                  setReturnModal({ ...returnModal, issueType: "no" })
+                }
+                className={`flex-1 py-2 rounded-lg border text-sm ${
+                  returnModal.issueType === "no"
+                    ? "border-green-500 bg-green-50 text-green-700"
+                    : "border-gray-300"
+                }`}
+              >
+                ✅ No issues
+              </button>
             </div>
             {returnModal.issueType === "yes" && (
               <>
                 <div className="flex flex-wrap gap-2 mb-3">
-                  {issueOptions.map(issue => (
-                    <button key={issue} onClick={() => setReturnModal({ ...returnModal, issues: issue })} className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${returnModal.issues === issue ? "bg-red-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>{issue}</button>
+                  {issueOptions.map((issue) => (
+                    <button
+                      key={issue}
+                      onClick={() =>
+                        setReturnModal({ ...returnModal, issues: issue })
+                      }
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                        returnModal.issues === issue
+                          ? "bg-red-600 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      {issue}
+                    </button>
                   ))}
-                  <button onClick={() => setReturnModal({ ...returnModal, issues: "Other: " })} className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${returnModal.issues?.startsWith("Other:") ? "bg-red-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}>Other (specify)</button>
+                  <button
+                    onClick={() =>
+                      setReturnModal({ ...returnModal, issues: "Other: " })
+                    }
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                      returnModal.issues?.startsWith("Other:")
+                        ? "bg-red-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    Other (specify)
+                  </button>
                 </div>
-                <textarea value={returnModal.issues} onChange={e => setReturnModal({ ...returnModal, issues: e.target.value })} placeholder="Describe the issue..." rows={2} className="w-full border rounded-lg p-2 text-sm mb-3" />
+                <textarea
+                  value={returnModal.issues}
+                  onChange={(e) =>
+                    setReturnModal({ ...returnModal, issues: e.target.value })
+                  }
+                  placeholder="Describe the issue..."
+                  rows={2}
+                  className="w-full border rounded-lg p-2 text-sm mb-3"
+                />
               </>
             )}
             <div className="flex gap-2">
-              <button onClick={() => setReturnModal({ open: false, loan: null, issues: "", issueType: "" })} className="flex-1 bg-gray-200 py-2 rounded text-sm">Cancel</button>
-              <button onClick={handleConfirmReturn} disabled={loading} className="flex-1 bg-blue-600 text-white py-2 rounded text-sm disabled:opacity-50">
+              <button
+                onClick={() =>
+                  setReturnModal({
+                    open: false,
+                    loan: null,
+                    issues: "",
+                    issueType: "",
+                  })
+                }
+                className="flex-1 bg-gray-200 py-2 rounded text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmReturn}
+                disabled={loading}
+                className="flex-1 bg-blue-600 text-white py-2 rounded text-sm disabled:opacity-50"
+              >
                 {loading ? "Processing..." : "Confirm Return"}
               </button>
             </div>
@@ -652,30 +1041,97 @@ export default function Borrowing() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full p-5">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="text-lg font-bold text-red-600">Mark as Not Returned</h3>
-              <button onClick={() => setNotReturnedModal({ open: false, loan: null, reasonOption: "", customReason: "" })}><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-bold text-red-600">
+                Mark as Not Returned
+              </h3>
+              <button
+                onClick={() =>
+                  setNotReturnedModal({
+                    open: false,
+                    loan: null,
+                    reasonOption: "",
+                    customReason: "",
+                  })
+                }
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
-            <p className="text-sm text-gray-600 mb-1">Book: <span className="font-semibold">{notReturnedModal.loan?.book?.title}</span></p>
-            <p className="text-sm text-gray-600 mb-3">Borrower: <span className="font-semibold">{notReturnedModal.loan?.visitor?.name}</span></p>
-            <p className="text-xs font-semibold text-gray-700 mb-2">Select Reason for Unreturned Book:</p>
+            <p className="text-sm text-gray-600 mb-1">
+              Book:{" "}
+              <span className="font-semibold">
+                {notReturnedModal.loan?.book?.title}
+              </span>
+            </p>
+            <p className="text-sm text-gray-600 mb-3">
+              Borrower:{" "}
+              <span className="font-semibold">
+                {notReturnedModal.loan?.visitor?.name}
+              </span>
+            </p>
+            <p className="text-xs font-semibold text-gray-700 mb-2">
+              Select Reason for Unreturned Book:
+            </p>
             <div className="space-y-2 mb-3">
-              {notReturnedReasons.map(reason => (
-                <label key={reason} className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer ${notReturnedModal.reasonOption === reason ? "border-red-500 bg-red-50 text-red-700 font-semibold" : "border-gray-200 hover:bg-gray-50"}`}>
-                  <input type="radio" name="notReturnedReason" checked={notReturnedModal.reasonOption === reason} onChange={() => setNotReturnedModal({ ...notReturnedModal, reasonOption: reason })} />
+              {notReturnedReasons.map((reason) => (
+                <label
+                  key={reason}
+                  className={`flex items-center gap-2 p-2 rounded-lg border text-xs cursor-pointer ${
+                    notReturnedModal.reasonOption === reason
+                      ? "border-red-500 bg-red-50 text-red-700 font-semibold"
+                      : "border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="notReturnedReason"
+                    checked={notReturnedModal.reasonOption === reason}
+                    onChange={() =>
+                      setNotReturnedModal({
+                        ...notReturnedModal,
+                        reasonOption: reason,
+                      })
+                    }
+                  />
                   {reason}
                 </label>
               ))}
             </div>
             <textarea
               value={notReturnedModal.customReason}
-              onChange={e => setNotReturnedModal({ ...notReturnedModal, customReason: e.target.value })}
-              placeholder={notReturnedModal.reasonOption === "Other" ? "Please specify reason details (required)..." : "Additional details (optional)..."}
+              onChange={(e) =>
+                setNotReturnedModal({
+                  ...notReturnedModal,
+                  customReason: e.target.value,
+                })
+              }
+              placeholder={
+                notReturnedModal.reasonOption === "Other"
+                  ? "Please specify reason details (required)..."
+                  : "Additional details (optional)..."
+              }
               rows={2}
               className="w-full border rounded-lg p-2 text-xs mb-4 focus:ring-1 focus:ring-red-500"
             />
             <div className="flex gap-2">
-              <button onClick={() => setNotReturnedModal({ open: false, loan: null, reasonOption: "", customReason: "" })} className="flex-1 bg-gray-200 py-2 rounded text-xs font-semibold">Cancel</button>
-              <button onClick={handleConfirmNotReturned} disabled={loading} className="flex-1 bg-red-600 text-white py-2 rounded text-xs font-semibold disabled:opacity-50">
+              <button
+                onClick={() =>
+                  setNotReturnedModal({
+                    open: false,
+                    loan: null,
+                    reasonOption: "",
+                    customReason: "",
+                  })
+                }
+                className="flex-1 bg-gray-200 py-2 rounded text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmNotReturned}
+                disabled={loading}
+                className="flex-1 bg-red-600 text-white py-2 rounded text-xs font-semibold disabled:opacity-50"
+              >
                 {loading ? "Submitting..." : "Submit Unreturned"}
               </button>
             </div>

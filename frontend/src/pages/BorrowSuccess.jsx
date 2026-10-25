@@ -1,172 +1,140 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import QRCode from "qrcode";
-import { Download, Home, BookOpen, Calendar, Hash, CheckCircle, Copy } from "lucide-react";
-import { toast } from "sonner";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { QRCodeSVG } from "qrcode.react";
+import { Home, BookOpen, Copy, Check } from "lucide-react";
 
 export default function BorrowSuccess() {
-  const [borrowInfo, setBorrowInfo] = useState(null);
-  const [combinedQrUrl, setCombinedQrUrl] = useState("");
+  const navigate = useNavigate();
+  const [info] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("borrowInfo") || "null");
+    } catch {
+      return null;
+    }
+  });
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem("borrowInfo");
-    if (!stored) {
-      window.location.href = "/";
-      return;
-    }
-    const info = JSON.parse(stored);
-    setBorrowInfo(info);
+    // No borrow info means nothing to show: go home (not back to the borrow page)
+    if (!info) navigate("/mobile/home", { replace: true });
+  }, [info, navigate]);
 
-    // Combine all tokens into one string (comma-separated)
-    const tokens = info.borrow_qr_tokens || [info.borrow_qr_token];
-    const combinedTokens = tokens.join(",");
-    const qrData = combinedTokens; // encode the combined tokens directly
+  if (!info) return null;
 
-    QRCode.toDataURL(qrData, (err, url) => {
-      if (!err) setCombinedQrUrl(url);
-    });
-  }, []);
-
-  const handleSaveQR = () => {
-    const link = document.createElement("a");
-    link.download = "borrow_batch_qr.png";
-    link.href = combinedQrUrl;
-    link.click();
-  };
-
-  const copyCombinedToken = () => {
-    if (borrowInfo) {
-      const tokens = borrowInfo.borrow_qr_tokens || [borrowInfo.borrow_qr_token];
-      const combined = tokens.join(",");
-      navigator.clipboard.writeText(combined);
-      toast.success("Combined token copied to clipboard");
-    }
-  };
-
-  if (!borrowInfo) return <div className="p-4 text-center">Loading...</div>;
-
-  const borrowDate = new Date(borrowInfo.borrowDate);
-  const dueDate = new Date(borrowInfo.dueDate);
-  const books = borrowInfo.books || [borrowInfo.book];
-  const tokens = borrowInfo.borrow_qr_tokens || [borrowInfo.borrow_qr_token];
+  const tokens = info.borrow_qr_tokens || [];
+  // Comma-joined tokens: the admin scanner reads this fine
   const combinedToken = tokens.join(",");
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(combinedToken);
+    } catch {
+      // fallback for older browsers
+      const ta = document.createElement("textarea");
+      ta.value = combinedToken;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <>
+      {/* Header (no back arrow, so the visitor cannot go back to borrow more) */}
       <div className="bg-[#1B3A6B] px-4 pt-4 pb-3">
         <div>
-          <p className="text-white text-sm font-bold">BORROW QR CODE (BATCH)</p>
-          <p className="text-blue-200 text-xs">One QR for all {books.length} book(s)</p>
+          <p className="text-white text-sm font-bold">SHOW THIS QR TO STAFF</p>
+          <p className="text-blue-200 text-xs">
+            {info.books.length} book{info.books.length > 1 ? "s" : ""} to borrow
+          </p>
         </div>
       </div>
 
       <div className="px-4 py-4 space-y-4">
-        <div className="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2">
-          <CheckCircle className="w-5 h-5 text-green-500" />
-          <p className="text-green-700 text-xs">
-            {books.length} book{books.length > 1 ? "s" : ""} borrowed successfully!
+        {/* QR */}
+        <div className="bg-white rounded-2xl p-6 flex flex-col items-center shadow-sm border border-gray-100">
+          <QRCodeSVG value={combinedToken} size={220} level="L" />
+          <p className="text-xs text-gray-500 mt-4 text-center">
+            Staff will scan this QR to confirm your borrow.
           </p>
-        </div>
 
-        {/* Single QR code for all books */}
-        <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-          <div className="bg-[#C9A227] px-4 py-2 flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-white" />
-            <p className="text-white text-xs font-bold tracking-wide">BATCH QR (SCAN ONCE)</p>
-          </div>
-          <div className="p-4 space-y-3">
-            <div className="bg-[#F5F7FA] rounded-xl py-4">
-              <div className="bg-white p-3 rounded-xl shadow-inner flex justify-center">
-                {combinedQrUrl && <img src={combinedQrUrl} alt="Batch QR" className="w-36 h-36" />}
-              </div>
+          {/* QR Token display */}
+          <div className="w-full mt-4 bg-[#F5F7FA] rounded-xl p-3 border border-gray-100">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-gray-400 text-[10px] uppercase tracking-wider font-semibold">
+                QR Token
+              </p>
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1 text-[10px] text-[#1B3A6B] font-semibold hover:text-blue-900"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3 h-3" /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" /> Copy
+                  </>
+                )}
+              </button>
             </div>
-
-            <div className="bg-[#1B3A6B] rounded-xl p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1">
-                  <Hash className="w-4 h-4 text-[#C9A227]" />
-                  <p className="text-blue-200 text-xs">Combined Token (all books)</p>
-                </div>
-                <button
-                  onClick={copyCombinedToken}
-                  className="text-white bg-blue-700 rounded-lg px-2 py-1 text-xs flex items-center gap-1"
-                >
-                  <Copy className="w-3 h-3" /> Copy
-                </button>
-              </div>
-              <p className="text-white font-mono text-xs break-all">{combinedToken}</p>
-            </div>
-
-            <button
-              onClick={handleSaveQR}
-              className="w-full bg-white border border-gray-200 text-gray-600 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1"
-            >
-              <Download className="w-3 h-3" /> Save Batch QR
-            </button>
+            <p className="font-mono text-[11px] text-gray-700 break-all leading-snug">
+              {combinedToken}
+            </p>
           </div>
         </div>
 
-        {/* List of borrowed books (optional summary) */}
-        <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-          <div className="bg-[#1B3A6B] px-4 py-2">
-            <p className="text-white text-xs font-bold tracking-wide">BORROWED BOOKS</p>
-          </div>
-          <div className="p-4 space-y-2">
-            {books.map((book, idx) => (
-              <div key={book._id || idx} className="flex items-center gap-3 py-2 border-b last:border-0">
+        {/* Books */}
+        <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm">
+          <p className="text-gray-400 text-xs uppercase tracking-wide">BOOKS</p>
+          <div className="space-y-2 mt-2">
+            {info.books.map((b) => (
+              <div
+                key={b._id}
+                className="flex items-center gap-3 py-2 border-b last:border-0"
+              >
                 <div className="w-8 h-10 bg-gradient-to-b from-[#1B3A6B] to-[#2a5298] rounded-lg flex items-center justify-center">
                   <BookOpen className="w-3 h-3 text-white" />
                 </div>
-                <div>
-                  <p className="text-[#1B3A6B] text-xs font-bold">{book.title}</p>
-                  <p className="text-gray-400 text-xs">{book.author}</p>
+                <div className="flex-1">
+                  <p className="text-[#1B3A6B] text-xs font-bold">{b.title}</p>
+                  <p className="text-gray-400 text-xs">{b.author}</p>
                 </div>
-                <span className="text-xs bg-[#EBF0F7] text-[#1B3A6B] px-2 py-0.5 rounded-full">{book.category}</span>
               </div>
             ))}
           </div>
-        </div>
-
-        {/* Borrow & due dates */}
-        <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-          <div className="bg-[#1B3A6B] px-4 py-2">
-            <p className="text-white text-xs font-bold tracking-wide">DATES</p>
-          </div>
-          <div className="p-4 space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-[#EBF0F7] rounded-xl p-2.5 flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-[#1B3A6B]" />
-                <div>
-                  <p className="text-gray-400 text-xs">Borrow Date</p>
-                  <p className="text-[#1B3A6B] font-semibold text-xs">{borrowDate.toLocaleDateString()}</p>
-                </div>
-              </div>
-              <div className="bg-red-50 rounded-xl p-2.5 flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-red-500" />
-                <div>
-                  <p className="text-gray-400 text-xs">Due Date</p>
-                  <p className="text-red-600 font-semibold text-xs">{dueDate.toLocaleDateString()}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-start gap-2">
-              <span className="text-lg">📧</span>
-              <div>
-                <p className="text-blue-700 text-xs font-bold">Reminder will be sent!</p>
-                <p className="text-blue-600 text-xs">An Email reminder will be sent to {borrowInfo.email} on {dueDate.toLocaleDateString()}.</p>
-              </div>
-            </div>
+          <div className="bg-[#F0F4F8] rounded-xl p-2.5 mt-3 text-center">
+            <p className="text-[#1B3A6B] font-bold text-sm">
+              Due: {new Date(info.dueDate).toLocaleDateString()}
+            </p>
           </div>
         </div>
 
-        <div className="flex gap-3">
-          <Link to="/mobile/borrow" className="flex-1 bg-white border border-gray-200 text-gray-600 py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
-            <BookOpen className="w-4 h-4" /> Borrow More
-          </Link>
-          <Link to="/mobile/home" className="flex-1 bg-[#1B3A6B] text-white py-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1">
-            <Home className="w-4 h-4" /> Back to Home
-          </Link>
+        {/* Info note */}
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-start gap-2">
+          <span className="text-lg">📱</span>
+          <div>
+            <p className="text-blue-700 text-xs font-semibold">
+              Please show this QR to the library staff.
+            </p>
+            <p className="text-blue-600 text-xs">
+              Your borrow will only be recorded after staff scans this QR.
+            </p>
+          </div>
+        </div>
+
+        {/* Only one way out: home (no "Borrow More") */}
+        <div className="pt-2">
+          <button
+            onClick={() => navigate("/mobile/home", { replace: true })}
+            className="w-full bg-[#1B3A6B] text-white py-3 rounded-2xl font-bold text-sm shadow-lg flex items-center justify-center gap-2 hover:bg-blue-900 transition"
+          >
+            <Home className="w-4 h-4" /> Go to Home
+          </button>
         </div>
       </div>
     </>

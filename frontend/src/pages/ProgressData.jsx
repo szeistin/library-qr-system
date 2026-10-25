@@ -5,7 +5,7 @@ import html2pdf from "html2pdf.js";
 import { saveAs } from "file-saver";
 
 const API_URL = import.meta.env.VITE_API_URL;
-const ADMIN_PIN = "1234"; // Adjust to your preferred security PIN
+
 
 const defaultDemographics = {
   "Children (6–12 yrs)": { male: 0, female: 0 },
@@ -18,6 +18,7 @@ const defaultDemographics = {
 export default function ProgressData() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState("");
+  const [pinLoading, setPinLoading] = useState(false); 
 
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
@@ -33,7 +34,10 @@ export default function ProgressData() {
   const [lastUpdated, setLastUpdated] = useState(new Date());
 
   const token = localStorage.getItem("token");
-  const headers = { Authorization: `Bearer ${token}` };
+ const headers = {
+  "Content-Type": "application/json",
+  Authorization: `Bearer ${token}`,
+};
 
   useEffect(() => {
     const months = [];
@@ -43,16 +47,30 @@ export default function ProgressData() {
     setAvailableMonths(months);
   }, [currentMonth]);
 
-  const handlePinSubmit = (e) => {
-    e.preventDefault();
-    if (pinInput === ADMIN_PIN) {
-      setIsUnlocked(true);
-      toast.success("Access granted");
-    } else {
-      toast.error("Incorrect PIN code");
-      setPinInput("");
-    }
-  };
+  const handlePinSubmit = async (e) => {
+  e.preventDefault();
+  if (pinInput.length !== 4) {
+    toast.error("Please enter a 4-digit PIN");
+    return;
+  }
+  setPinLoading(true);
+  try {
+    const res = await fetch(`${API_URL}/staff/verify-pin`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ pin: pinInput }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Incorrect PIN code");
+    setIsUnlocked(true);
+    toast.success("Access granted");
+  } catch (err) {
+    toast.error(err.message);
+    setPinInput("");
+  } finally {
+    setPinLoading(false);
+  }
+};
 
   const normalize = (data) => ({
     visitorDemographics: {
@@ -203,25 +221,28 @@ export default function ProgressData() {
           </div>
           <div>
             <h3 className="font-bold text-gray-800 text-base">Restricted Access</h3>
-            <p className="text-xs text-gray-500 mt-1">Enter PIN code to view accomplishment reports</p>
-          </div>
-          <form onSubmit={handlePinSubmit} className="space-y-3">
-            <input
-              type="password"
-              maxLength={6}
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value)}
-              placeholder="Enter PIN"
-              className="w-full text-center tracking-widest text-lg font-bold border border-gray-300 rounded p-2 focus:ring-2 focus:ring-[#1B3A6B] outline-none"
-              autoFocus
-            />
-            <button
-              type="submit"
-              className="w-full bg-[#1B3A6B] text-white py-2 rounded text-xs font-bold hover:bg-blue-900 transition"
-            >
-              Unlock Report
-            </button>
-          </form>
+            <p className="text-xs text-gray-500 mt-1">
+  Enter your 4-digit staff PIN to view accomplishment reports
+</p>
+</div>
+<form onSubmit={handlePinSubmit} className="space-y-3">
+  <input
+    type="password"
+    maxLength={4}
+    value={pinInput}
+    onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
+    placeholder="****"
+    className="w-full text-center tracking-widest text-2xl font-mono border border-gray-300 rounded-xl p-2 focus:ring-2 focus:ring-[#1B3A6B] outline-none"
+    autoFocus
+  />
+  <button
+    type="submit"
+    disabled={pinLoading || pinInput.length !== 4}
+    className="w-full bg-[#1B3A6B] text-white py-2.5 rounded-xl text-xs font-bold hover:bg-blue-900 transition disabled:opacity-50"
+  >
+    {pinLoading ? "Verifying..." : "Unlock Report"}
+  </button>
+</form>
         </div>
       </div>
     );

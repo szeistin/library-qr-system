@@ -8,6 +8,8 @@ const VisitorSchema = new mongoose.Schema({
   course: String,
   school_work: String,
   profession: String,
+  purpose: String,                                 
+  is_pwd: { type: Boolean, default: false },
   phone: String,
   email: String,
   has_library_card: { type: Boolean, default: false },

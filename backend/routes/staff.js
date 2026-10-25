@@ -1,75 +1,57 @@
 const express = require("express");
 const router = express.Router();
-const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
 const Staff = require("../models/Staff");
-const StaffLog = require("../models/StaffLog");
 
-// LOGIN: Authenticates Username, Position, and PIN
+// STAFF LOGIN
 router.post("/login", async (req, res) => {
    try {
-      const { username, position, pin } = req.body;
+      const { username, pin } = req.body;
+      if (!username || !pin) return res.status(400).json({ error: "Username and PIN required" });
 
-      // 1. Find staff member by username
-      const staff = await Staff.findOne({ username });
-      if (!staff) {
-         return res.status(401).json({ error: "Invalid credentials" });
-      }
+      const cleanUsername = username.trim().toLowerCase();
+      const staff = await Staff.findOne({ username: cleanUsername });
+      if (!staff) return res.status(401).json({ error: "Invalid username or PIN" });
 
-      // 2. Validate position matches the assigned role in the database
-      if (position && staff.position !== position) {
-         return res.status(401).json({ error: "Selected position does not match account records" });
-      }
+      const isMatch = await bcrypt.compare(pin, staff.pin_hash);
+      if (!isMatch) return res.status(401).json({ error: "Invalid username or PIN" });
 
-      // 3. Verify PIN
-      const isValid = await bcrypt.compare(pin, staff.pin_hash);
-      if (!isValid) {
-         return res.status(401).json({ error: "Invalid credentials" });
-      }
-
-      // 4. Generate JWT Token (Includes position for role-based authorization)
       const token = jwt.sign(
-         { id: staff._id, username: staff.username, position: staff.position },
-         process.env.JWT_SECRET,
-         { expiresIn: "8h" }
+         { id: staff._id, position: staff.position },
+         process.env.JWT_SECRET || "secret",
+         { expiresIn: "12h" }
       );
-
-      // 5. Create audit log entry
-      await StaffLog.create({ staff: staff._id });
 
       res.json({
          token,
          staff: { id: staff._id, username: staff.username, position: staff.position },
       });
    } catch (err) {
-      console.error(err);
+      console.error("Login error:", err);
       res.status(500).json({ error: "Server error" });
    }
 });
 
-// VERIFY PIN: Quick authentication check for sensitive actions inside dashboard
+// VERIFY PIN (For Manage Books and Borrowing gates)
 router.post("/verify-pin", async (req, res) => {
    try {
-      const { pin } = req.body;
       const token = req.headers.authorization?.split(" ")[1];
-      if (!token) return res.status(401).json({ error: "No token" });
+      if (!token) return res.status(401).json({ error: "No token provided" });
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret");
       const staff = await Staff.findById(decoded.id);
-      if (!staff) return res.status(404).json({ error: "Staff not found" });
+      if (!staff) return res.status(404).json({ error: "Staff member not found" });
 
-      const isValid = await bcrypt.compare(pin, staff.pin_hash);
-      if (!isValid) return res.status(401).json({ error: "Invalid PIN" });
+      const { pin } = req.body;
+      const isMatch = await bcrypt.compare(pin, staff.pin_hash);
+      if (!isMatch) return res.status(401).json({ error: "Incorrect PIN code" });
 
-      res.json({ message: "PIN verified" });
+      res.json({ message: "PIN verified successfully" });
    } catch (err) {
-      res.status(500).json({ error: "Server error" });
+      console.error("Verify PIN error:", err);
+      res.status(500).json({ error: "Invalid or expired token" });
    }
-});
-
-// LOGOUT
-router.post("/logout", async (req, res) => {
-   res.json({ message: "Logged out" });
 });
 
 module.exports = router;

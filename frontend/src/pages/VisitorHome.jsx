@@ -42,10 +42,12 @@ export default function VisitorHome() {
       }
    }, [navigate]);
 
+   // Load this visitor's loans (MongoDB uses _id, so support both)
    useEffect(() => {
-      if (visitor?.id) {
+      const visitorId = visitor?._id || visitor?.id;
+      if (visitorId) {
          setLoadingLoans(true);
-         getVisitorLoans(visitor.id)
+         getVisitorLoans(visitorId)
             .then((data) => setBorrowedBooks(data || []))
             .catch((err) => console.error("Loans fetch error:", err))
             .finally(() => setLoadingLoans(false));
@@ -101,10 +103,12 @@ export default function VisitorHome() {
              : "Adults";
 
    // Account Blocking Logic Condition
+   // Restricted when any loan is not returned, unretrieved, overdue, or past due
    const todayZero = new Date().setHours(0, 0, 0, 0);
    const hasUnretrievedOrOverdue = borrowedBooks.some((loan) => {
       const dueZero = new Date(loan.due_date).setHours(0, 0, 0, 0);
       return (
+         loan.status === "not_returned" ||
          loan.status === "unretrieved" ||
          loan.status === "overdue" ||
          (loan.status !== "returned" && dueZero < todayZero)
@@ -115,6 +119,10 @@ export default function VisitorHome() {
       visitor.status === "blocked" ||
       visitor.is_blocked === true ||
       hasUnretrievedOrOverdue;
+
+   // A visitor who still has a borrowed (not yet returned) book cannot borrow again
+   const hasActiveLoan = borrowedBooks.some((loan) => loan.status === "borrowed");
+   const cannotBorrow = isBlocked || hasActiveLoan;
 
    return (
       <>
@@ -177,8 +185,8 @@ export default function VisitorHome() {
                      </p>
                      <p className="text-red-700 text-xs mt-0.5">
                         Your account is currently restricted from borrowing new
-                        books due to unretrieved reservations or overdue loans.
-                        Please contact library staff to unblock your account.
+                        books due to unreturned, unretrieved, or overdue books.
+                        Please contact library staff to resolve this.
                      </p>
                   </div>
                </div>
@@ -228,8 +236,8 @@ export default function VisitorHome() {
                )}
             </div>
 
-            {/* Borrow Banner (Disabled if blocked) */}
-            {isBlocked ? (
+            {/* Borrow Banner (Disabled if restricted or has an active loan) */}
+            {cannotBorrow ? (
                <div className="bg-gray-200 rounded-2xl p-4 shadow-sm flex items-center justify-between opacity-75 cursor-not-allowed">
                   <div className="flex items-center gap-3">
                      <div className="w-10 h-10 bg-gray-400/30 rounded-xl flex items-center justify-center">
@@ -237,10 +245,14 @@ export default function VisitorHome() {
                      </div>
                      <div>
                         <p className="text-gray-700 font-bold text-sm">
-                           BORROWING DISABLED
+                           {isBlocked
+                              ? "BORROWING DISABLED"
+                              : "RETURN YOUR BOOK FIRST"}
                         </p>
                         <p className="text-gray-500 text-xs">
-                           Resolve overdue books to continue
+                           {isBlocked
+                              ? "Resolve your unreturned or overdue books to continue"
+                              : "You can borrow again after returning your borrowed book"}
                         </p>
                      </div>
                   </div>
@@ -299,6 +311,9 @@ export default function VisitorHome() {
                         if (loan.status === "returned") {
                            statusText = "Returned";
                            statusClass = "bg-gray-100 text-gray-600";
+                        } else if (loan.status === "not_returned") {
+                           statusText = "Not Returned (Restricted)";
+                           statusClass = "bg-red-100 text-red-700 font-bold";
                         } else if (loan.status === "unretrieved") {
                            statusText = "Unretrieved (Blocked)";
                            statusClass = "bg-red-100 text-red-700 font-bold";
@@ -373,7 +388,7 @@ export default function VisitorHome() {
                         <div
                            key={book._id}
                            onClick={() => {
-                              if (!isBlocked) {
+                              if (!cannotBorrow) {
                                  navigate("/mobile/borrow", {
                                     state: {
                                        tab: "recommendations",
@@ -383,7 +398,7 @@ export default function VisitorHome() {
                               }
                            }}
                            className={`bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-center gap-3 transition-all ${
-                              isBlocked
+                              cannotBorrow
                                  ? "opacity-60 cursor-not-allowed"
                                  : "cursor-pointer hover:border-blue-300 hover:shadow-md"
                            }`}

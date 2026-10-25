@@ -3,7 +3,8 @@ const router = express.Router();
 const Visit = require("../models/Visit");
 const { startOfMonth, endOfMonth } = require("date-fns");
 
-function getAgeGroup(dob) {
+function getAgeGroup(dob, isPWD) {
+   if (isPWD) return "PWD (Persons w/ Disability)";
    if (!dob) return "Uncategorized";
    const birthDate = new Date(dob);
    const today = new Date();
@@ -14,7 +15,7 @@ function getAgeGroup(dob) {
    if (age >= 13 && age <= 21) return "Adolescents (13–21 yrs)";
    if (age >= 22 && age <= 35) return "Young Adults (22–35 yrs)";
    if (age >= 36) return "Adults (36 yrs+)";
-   return "PWD (Persons w/ Disability)";
+   return "Uncategorized"; // under 6: not counted
 }
 
 router.get("/monthly/:year/:month", async (req, res) => {
@@ -26,7 +27,7 @@ router.get("/monthly/:year/:month", async (req, res) => {
       // Find all visits within the month
       const visits = await Visit.find({
          check_in_time: { $gte: start, $lte: end },
-      }).populate("visitor", "dob gender");
+      }).populate("visitor", "dob gender is_pwd");
 
       // Use a Map to deduplicate by visitor ID (unique visitors per month)
       const uniqueVisitorsMap = new Map();
@@ -49,7 +50,7 @@ router.get("/monthly/:year/:month", async (req, res) => {
       };
 
       for (const visitor of uniqueVisitors) {
-         const group = getAgeGroup(visitor.dob);
+         const group = getAgeGroup(visitor.dob, visitor.is_pwd);
          const gender =
             visitor.gender?.toLowerCase() === "female" ? "female" : "male";
          if (demographics[group]) {

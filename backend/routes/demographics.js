@@ -14,7 +14,7 @@ function getAgeGroup(dob) {
   if (age >= 13 && age <= 21) return 'Adolescents';
   if (age >= 22 && age <= 35) return 'Young Adults';
   if (age >= 36) return 'Adults';
-  return 'PWD';
+  return 'Returns Under 6'; 
 }
 
 router.get('/monthly/:year/:month', async (req, res) => {
@@ -40,8 +40,9 @@ router.get('/monthly/:year/:month', async (req, res) => {
         continue;
       }
       const group = getAgeGroup(visit.visitor.dob);
-      console.log(`Visit ${visit._id}: visitor ${visit.visitor.name}, dob ${visit.visitor.dob}, group ${group}`);
-      if (counts[group] !== undefined) counts[group]++;
+console.log(`Visit ${visit._id}: visitor ${visit.visitor.name}, group ${group}, pwd ${visit.visitor.is_pwd}`);
+if (counts[group] !== undefined) counts[group]++;
+if (visit.visitor.is_pwd) counts.PWD++;
     }
     console.log('Counts:', counts);
     res.json([{ month: `${month}/2026`, ...counts }]);
@@ -58,7 +59,7 @@ router.get("/today", async (req, res) => {
       const todayEnd = endOfDay(new Date());
       const visits = await Visit.find({
          check_in_time: { $gte: todayStart, $lte: todayEnd },
-      }).populate("visitor", "dob");
+      }).populate("visitor", "dob is_pwd");
       const counts = {
          Children: 0,
          Adolescents: 0,
@@ -67,11 +68,12 @@ router.get("/today", async (req, res) => {
          PWD: 0,
       };
       visits.forEach((v) => {
-         if (v.visitor && v.visitor.dob) {
-            const group = getAgeGroup(v.visitor.dob);
-            if (counts[group] !== undefined) counts[group]++;
-         }
-      });
+   if (v.visitor && v.visitor.dob) {
+      const group = getAgeGroup(v.visitor.dob);
+      if (counts[group] !== undefined) counts[group]++;
+   }
+   if (v.visitor && v.visitor.is_pwd) counts.PWD++;
+});
       const result = Object.entries(counts).map(([category, count]) => ({
          category,
          count,

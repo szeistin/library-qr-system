@@ -5,21 +5,30 @@ const { generateToken, generateReferenceNumber } = require('../utils/helpers');
 
 router.post('/register', async (req, res) => {
   console.log("✅ Register hit", req.body);
+  console.log("PURPOSE RECEIVED:", req.body.purpose);
+console.log("PWD RECEIVED:", req.body.isPWD);
   try {
-    const { name, address, dob, gender, course, school_work, profession, phone, email, purpose } = req.body;
-    if (!name || !dob || !gender) return res.status(400).json({ error: 'Name, DOB, Gender required' });
+   const { name, address, dob, gender, course, school_work, profession, phone, email, purpose, isPWD } = req.body;
+if (!name || !dob || !gender) return res.status(400).json({ error: 'Name, DOB, Gender required' });
 
-    let visitor = await Visitor.findOne({ name, dob });
-    if (visitor) {
-      visitor.address = address; visitor.gender = gender; visitor.course = course;
-      visitor.school_work = school_work; visitor.profession = profession; visitor.phone = phone; visitor.email = email;
-      await visitor.save();
-    } else {
-      const qr_token = generateToken();
-      const reference_number = generateReferenceNumber();
-      visitor = new Visitor({ name, address, dob, gender, course, school_work, profession, phone, email, qr_token, reference_number });
-      await visitor.save();
-    }
+let visitor = await Visitor.findOne({ name, dob });
+if (visitor) {
+  visitor.address = address; visitor.gender = gender; visitor.course = course;
+  visitor.school_work = school_work; visitor.profession = profession;
+  visitor.phone = phone; visitor.email = email;
+  visitor.purpose = purpose;
+  visitor.is_pwd = Boolean(isPWD);                  // new
+  await visitor.save();
+} else {
+  const qr_token = generateToken();
+  const reference_number = generateReferenceNumber();
+  visitor = new Visitor({
+    name, address, dob, gender, course, school_work, profession,
+    phone, email, purpose, qr_token, reference_number,
+    is_pwd: Boolean(isPWD),                         // new
+  });
+  await visitor.save();
+}
 
     // Use x-forwarded-proto for HTTPS detection on Render
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;

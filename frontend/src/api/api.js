@@ -33,17 +33,19 @@ export async function getCategories() {
   return res.json();
 }
 
-export async function borrowBook(token, data) {
+// ✅ FIXED: Changed /borrow-intent back to /borrow
+export async function borrowBook(token, payload) {
   const res = await fetch(`${API_URL}/loans/borrow`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error);
-  }
-  return res.json(); // must include borrow_qr_token
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to borrow book");
+  return data; // { borrow_qr_token }
 }
 
 export async function getVisitorLoans(visitorId) {
@@ -57,6 +59,8 @@ export async function getRecommendedBooks(dob) {
   if (!res.ok) throw new Error('Failed to fetch recommended books');
   return res.json();
 }
+
+// ✅ FIXED: Only sends username and pin
 export async function loginStaff(username, pin) {
   const res = await fetch(`${API_URL}/staff/login`, {
     method: 'POST',
