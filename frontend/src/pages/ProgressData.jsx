@@ -15,6 +15,98 @@ const defaultDemographics = {
   "PWD (Persons w/ Disability)": { male: 0, female: 0 },
 };
 
+
+// =========================
+// EXPORT HELPERS
+// =========================
+// Convert any CSS color (rgb, oklch, color(), ...) to plain rgb() that Word understands
+const _colorCanvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
+function toRgb(color) {
+  if (!color || !_colorCanvas) return null;
+  try {
+    _colorCanvas.width = 1;
+    _colorCanvas.height = 1;
+    const ctx = _colorCanvas.getContext("2d", { willReadFrequently: true });
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = "#000000";
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    if (a === 0) return null;
+    return `rgb(${r},${g},${b})`;
+  } catch {
+    return null;
+  }
+}
+
+// Copy the on-screen look (colors, sizes, borders, padding, spacing) onto the cloned
+// elements as inline styles, because Word cannot read Tailwind classes.
+function inlineComputedStyles(orig, clone) {
+  const origEls = [orig, ...orig.querySelectorAll("*")];
+  const cloneEls = [clone, ...clone.querySelectorAll("*")];
+
+  origEls.forEach((o, i) => {
+    const c = cloneEls[i];
+    if (!c || o instanceof SVGElement) return;
+
+    const cs = window.getComputedStyle(o);
+    const tag = o.tagName.toLowerCase();
+    const s = c.style;
+    const isRoot = i === 0;
+
+    const color = toRgb(cs.color);
+    if (color) s.color = color;
+
+    if (!isRoot) {
+      const bg = toRgb(cs.backgroundColor);
+      if (bg) s.backgroundColor = bg;
+    }
+
+    s.fontSize = `${(parseFloat(cs.fontSize) * 0.75).toFixed(1)}pt`;
+    s.fontWeight = cs.fontWeight;
+    const align = cs.textAlign === "start" ? "left" : cs.textAlign === "end" ? "right" : cs.textAlign;
+    s.textAlign = align;
+    if (cs.textTransform !== "none") s.textTransform = cs.textTransform;
+    if (cs.letterSpacing !== "normal") s.letterSpacing = cs.letterSpacing;
+
+    if (!isRoot) {
+      // Borders (only sides that are actually drawn)
+      ["Top", "Right", "Bottom", "Left"].forEach((side) => {
+        const w = parseFloat(cs[`border${side}Width`]);
+        const bc = toRgb(cs[`border${side}Color`]);
+        if (w > 0 && cs[`border${side}Style`] !== "none" && bc) {
+          s[`border${side}`] = `${w}px solid ${bc}`;
+        }
+      });
+
+      // Padding for boxes and table cells
+      if (["td", "th", "div", "h3"].includes(tag)) {
+        s.padding = `${cs.paddingTop} ${cs.paddingRight} ${cs.paddingBottom} ${cs.paddingLeft}`;
+      }
+
+      // Vertical spacing, same as on screen
+      if (["div", "h2", "h3", "table", "p"].includes(tag)) {
+        s.marginTop = cs.marginTop;
+        s.marginBottom = cs.marginBottom;
+      }
+    }
+
+    if (tag === "table") {
+      s.borderCollapse = "collapse";
+      s.width = "100%";
+    }
+
+    // Keep the same column proportions as on screen
+    if (tag === "td" || tag === "th") {
+      const table = o.closest("table");
+      const tw = table ? table.getBoundingClientRect().width : 0;
+      if (tw > 0) {
+        s.width = `${((o.getBoundingClientRect().width / tw) * 100).toFixed(1)}%`;
+      }
+    }
+  });
+}
+
 export default function ProgressData() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState("");
@@ -160,34 +252,74 @@ export default function ProgressData() {
     }
   }, [month, year, isUnlocked]);
 
+  // =========================
+  // EXPORT: DOC (A4, 2 cm margins, same look as the screen)
+  // =========================
   const handleExportDOC = () => {
     const element = document.getElementById("report-content");
     if (!element) return toast.error("Report content not found");
 
     const clone = element.cloneNode(true);
+
+    // 1. Copy the on-screen styling onto the clone (before removing icons so both trees match)
+    inlineComputedStyles(element, clone);
+
+    // 2. Remove icons
     clone.querySelectorAll("svg").forEach((svg) => svg.remove());
+
+    // 3. The flex summary bar does not exist in Word, so rebuild it as a one-row table
+    const box = clone.querySelector(".summary-box");
+    if (box) {
+      const tbl = document.createElement("table");
+      tbl.setAttribute("width", "100%");
+      tbl.setAttribute("cellpadding", "0");
+      tbl.setAttribute("cellspacing", "0");
+      tbl.style.cssText = box.style.cssText;
+      tbl.style.borderCollapse = "collapse";
+      tbl.style.width = "100%";
+      const cells = Array.from(box.children)
+        .map(
+          (span) =>
+            `<td style="text-align:center;border:none;padding:0 4px;color:${span.style.color};font-size:${span.style.fontSize};">${span.innerHTML}</td>`
+        )
+        .join("");
+      tbl.innerHTML = `<tr>${cells}</tr>`;
+      box.replaceWith(tbl);
+    }
+
+    // 4. Make sure every table fills the page width
+    clone.querySelectorAll("table").forEach((t) => t.setAttribute("width", "100%"));
 
     const htmlContent = `<!DOCTYPE html>
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
   <meta charset="utf-8">
   <title>Accomplishment & Circulation Report</title>
+  <!--[if gte mso 9]>
+  <xml>
+    <w:WordDocument>
+      <w:View>Print</w:View>
+      <w:Zoom>100</w:Zoom>
+      <w:DoNotOptimizeForBrowser/>
+    </w:WordDocument>
+  </xml>
+  <![endif]-->
   <style>
-    body { font-family: 'Arial', sans-serif; font-size: 12pt; color: #111; margin: 30px; }
-    h2 { font-size: 14pt; color: #1B3A6B; text-align: center; font-weight: bold; margin-bottom: 4px; }
-    p { font-size: 11pt; margin: 2px 0; }
-    .subtitle { text-align: center; margin-bottom: 20px; color: #555; }
-    .summary-box { border: 1px solid #1B3A6B; background-color: #F5F7FA; padding: 10px; margin-bottom: 20px; font-size: 11pt; font-weight: bold; text-align: center; }
-    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 11pt; }
-    th, td { border: 1px solid #999; padding: 6px 8px; text-align: left; }
-    th { background-color: #1B3A6B; color: #ffffff; font-weight: bold; }
-    .text-center { text-align: center; }
-    .font-bold { font-weight: bold; }
-    .section-title { font-size: 12pt; font-weight: bold; color: #1B3A6B; margin-top: 15px; margin-bottom: 8px; border-bottom: 1px solid #1B3A6B; padding-bottom: 3px; }
+    @page WordSection1 {
+      size: 21.0cm 29.7cm;
+      margin: 2.0cm 2.0cm 2.0cm 2.0cm;
+      mso-page-orientation: portrait;
+    }
+    div.WordSection1 { page: WordSection1; }
+    body { font-family: 'Arial', sans-serif; color: #111; line-height: 1.15; }
+    p, div, h2, h3 { margin-top: 0; margin-bottom: 0; mso-margin-top-alt: 0; mso-margin-bottom-alt: 0; }
+    table { border-collapse: collapse; }
   </style>
 </head>
 <body>
-  ${clone.innerHTML}
+  <div class="WordSection1">
+    ${clone.innerHTML}
+  </div>
 </body>
 </html>`;
 
@@ -196,18 +328,57 @@ export default function ProgressData() {
     toast.success("DOC exported successfully");
   };
 
-  const handleExportPDF = () => {
+  // =========================
+  // EXPORT: PDF (A4 portrait, 0.5 in margins)
+  // =========================
+  const handleExportPDF = async () => {
     const element = document.getElementById("report-content");
     if (!element) return toast.error("Report content not found");
 
-    html2pdf().from(element).set({
-      margin: 0.5,
-      filename: `accomplishment_${year}_${month}.pdf`,
-      image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
-    }).save();
-    toast.success("PDF exported successfully");
+    // A4 is 8.27 in wide; minus 0.5 in margins each side = 7.27 in, about 698 px at 96 dpi.
+    // Rendering a copy at that fixed width keeps the PDF the same size on any screen.
+    const PAGE_WIDTH_PX = 698;
+
+    const clone = element.cloneNode(true);
+    clone.style.width = `${PAGE_WIDTH_PX}px`;
+    clone.style.maxWidth = "none";
+    clone.style.margin = "0";
+    clone.style.padding = "0";
+    clone.style.border = "none";
+    clone.style.boxShadow = "none";
+
+    const holder = document.createElement("div");
+    holder.style.position = "fixed";
+    holder.style.left = "-10000px";
+    holder.style.top = "0";
+    holder.appendChild(clone);
+    document.body.appendChild(holder);
+
+    try {
+      await html2pdf()
+        .from(clone)
+        .set({
+          margin: 0.5,
+          filename: `accomplishment_${year}_${month}.pdf`,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: {
+            scale: 2,
+            useCORS: true,
+            windowWidth: PAGE_WIDTH_PX,
+            scrollX: 0,
+            scrollY: 0,
+          },
+          jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
+          pagebreak: { mode: ["css", "legacy"], avoid: ["tr", "h3"] },
+        })
+        .save();
+      toast.success("PDF exported successfully");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to export PDF");
+    } finally {
+      holder.remove();
+    }
   };
 
   // PIN Protection Gate

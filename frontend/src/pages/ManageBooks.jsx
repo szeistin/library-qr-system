@@ -3,6 +3,7 @@ import { Plus, Edit, Trash2, X, Search, Library, BookUp, BookDown, AlertCircle, 
 import { Toaster, toast } from "sonner";
 
 const API_URL = import.meta.env.VITE_API_URL;
+const OTHERS_VALUE = "__others__";
 
 export default function ManageBooks() {
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -15,15 +16,19 @@ export default function ManageBooks() {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingBook, setEditingBook] = useState(null);
+  // Copies are kept as text while typing and converted to numbers on save
   const [formData, setFormData] = useState({
     title: "",
     author: "",
     category: "",
-    total_copies: 1,
-    available_copies: 1,
+    total_copies: "",
+    available_copies: "",
   });
+  // "Others" category support
+  const [isOtherCategory, setIsOtherCategory] = useState(false);
+  const [customCategory, setCustomCategory] = useState("");
   const [loading, setLoading] = useState(false);
-  
+
   // New state to hold our dynamic stats
   const [stats, setStats] = useState({
     total: 0,
@@ -37,6 +42,11 @@ export default function ManageBooks() {
     "Content-Type": "application/json",
     Authorization: `Bearer ${token}`,
   };
+
+  // Categories shown in the Add/Edit dropdown ("Others" is added separately)
+  const categoryOptions = categories.filter(
+    (c) => c.trim().toLowerCase() !== "others"
+  );
 
   const handlePinSubmit = async (e) => {
     e.preventDefault();
@@ -146,23 +156,29 @@ export default function ManageBooks() {
 
   const handleOpenModal = (book = null) => {
     if (book) {
+      const cat = book.category || "";
+      const isCustom = cat !== "" && !categoryOptions.includes(cat);
       setEditingBook(book);
       setFormData({
         title: book.title,
         author: book.author || "",
-        category: book.category || "",
-        total_copies: book.total_copies,
-        available_copies: book.available_copies,
+        category: isCustom ? "" : cat,
+        total_copies: String(book.total_copies ?? ""),
+        available_copies: String(book.available_copies ?? ""),
       });
+      setIsOtherCategory(isCustom);
+      setCustomCategory(isCustom ? cat : "");
     } else {
       setEditingBook(null);
       setFormData({
         title: "",
         author: "",
         category: "",
-        total_copies: 1,
-        available_copies: 1,
+        total_copies: "",
+        available_copies: "",
       });
+      setIsOtherCategory(false);
+      setCustomCategory("");
     }
     setModalOpen(true);
   };
@@ -174,20 +190,49 @@ export default function ManageBooks() {
       title: "",
       author: "",
       category: "",
-      total_copies: 1,
-      available_copies: 1,
+      total_copies: "",
+      available_copies: "",
     });
+    setIsOtherCategory(false);
+    setCustomCategory("");
   };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    // Ensure numbers for copies
-    const val = name.includes('copies') ? Number(value) : value;
+    // Copies: digits only, so staff can simply type the number
+    const val = name.includes("copies") ? value.replace(/\D/g, "") : value;
     setFormData({ ...formData, [name]: val });
+  };
+
+  const handleCategorySelect = (e) => {
+    const value = e.target.value;
+    if (value === OTHERS_VALUE) {
+      setIsOtherCategory(true);
+      setFormData({ ...formData, category: "" });
+    } else {
+      setIsOtherCategory(false);
+      setCustomCategory("");
+      setFormData({ ...formData, category: value });
+    }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    const finalCategory = isOtherCategory ? customCategory.trim() : formData.category;
+    if (isOtherCategory && !finalCategory) {
+      toast.error("Please type the category");
+      return;
+    }
+    if (formData.total_copies === "" || Number(formData.total_copies) < 1) {
+      toast.error("Total copies must be at least 1");
+      return;
+    }
+    if (formData.available_copies === "") {
+      toast.error("Please enter the available copies");
+      return;
+    }
+
     setLoading(true);
     try {
       const url = editingBook
@@ -197,7 +242,12 @@ export default function ManageBooks() {
       const res = await fetch(url, {
         method,
         headers,
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          category: finalCategory,
+          total_copies: Number(formData.total_copies),
+          available_copies: Number(formData.available_copies),
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -450,13 +500,28 @@ export default function ManageBooks() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Category
                 </label>
-                <input
-                  type="text"
-                  name="category"
-                  value={formData.category}
-                  onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
-                />
+                <select
+                  value={isOtherCategory ? OTHERS_VALUE : formData.category}
+                  onChange={handleCategorySelect}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
+                >
+                  <option value="">Select category</option>
+                  {categoryOptions.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                  <option value={OTHERS_VALUE}>Others</option>
+                </select>
+                {isOtherCategory && (
+                  <input
+                    type="text"
+                    value={customCategory}
+                    onChange={(e) => setCustomCategory(e.target.value)}
+                    placeholder="Type the category"
+                    className="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
+                  />
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -464,11 +529,12 @@ export default function ManageBooks() {
                     Total Copies
                   </label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     name="total_copies"
                     value={formData.total_copies}
                     onChange={handleInputChange}
-                    min="1"
+                    placeholder="e.g. 5"
                     required
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
                   />
@@ -478,11 +544,12 @@ export default function ManageBooks() {
                     Available Copies
                   </label>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
                     name="available_copies"
                     value={formData.available_copies}
                     onChange={handleInputChange}
-                    min="0"
+                    placeholder="e.g. 5"
                     required
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
                   />
