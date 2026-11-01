@@ -12,6 +12,7 @@ import {
   History,
   AlertCircle,
   Lock,
+  RefreshCw,
 } from "lucide-react";
 import { Html5Qrcode } from "html5-qrcode";
 
@@ -394,30 +395,40 @@ export default function Borrowing() {
     }
   };
 
-  const handleSendReminder = async (loan) => {
-    if (loan.reminder_sent || reminderLoading[loan._id]) return;
-    setReminderLoading((prev) => ({ ...prev, [loan._id]: true }));
-    try {
-      const res = await fetch(`${API_URL}/loans/${loan._id}/reminder`, {
-        method: "POST",
-        headers,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to send reminder");
-      setActiveLoans((prev) =>
-        prev.map((item) =>
-          item._id === loan._id ? { ...item, reminder_sent: true } : item
-        )
-      );
-      toast.success(
-        `Reminder sent to ${loan.email || loan.visitor?.email || "borrower"}`
-      );
-    } catch (err) {
-      toast.error(err.message);
-    } finally {
-      setReminderLoading((prev) => ({ ...prev, [loan._id]: false }));
-    }
-  };
+ const handleSendReminder = async (loan) => {
+  if (reminderLoading[loan._id]) return;
+  const isRemindAgain = !!loan.reminder_sent;
+  setReminderLoading((prev) => ({ ...prev, [loan._id]: true }));
+  try {
+    const res = await fetch(`${API_URL}/loans/${loan._id}/reminder`, {
+      method: "POST",
+      headers,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to send reminder");
+    setActiveLoans((prev) =>
+      prev.map((item) =>
+        item._id === loan._id
+          ? {
+              ...item,
+              reminder_sent: true,
+              reminder_count:
+                (item.reminder_count || (item.reminder_sent ? 1 : 0)) + 1,
+            }
+          : item
+      )
+    );
+    toast.success(
+      `${isRemindAgain ? "Reminder sent again to" : "Reminder sent to"} ${
+        loan.email || loan.visitor?.email || "borrower"
+      }`
+    );
+  } catch (err) {
+    toast.error(err.message);
+  } finally {
+    setReminderLoading((prev) => ({ ...prev, [loan._id]: false }));
+  }
+};
 
   const handleRetrieve = async (loan) => {
     if (
@@ -495,24 +506,38 @@ export default function Borrowing() {
     overdueLoans.length + dueTodayLoans.length + dueTomorrowLoans.length;
 
   const ReminderButton = ({ loan }) => {
-    if (loan.reminder_sent) {
-      return (
+  const sending = !!reminderLoading[loan._id];
+
+  if (loan.reminder_sent) {
+    return (
+      <div className="space-y-1">
         <span className="text-green-600 text-[11px] flex items-center justify-center gap-1">
           <CheckCircle className="w-3 h-3" /> Reminder Sent
+          {loan.reminder_count > 1 ? ` (${loan.reminder_count}x)` : ""}
         </span>
-      );
-    }
-    return (
-      <button
-        onClick={() => handleSendReminder(loan)}
-        disabled={!!reminderLoading[loan._id]}
-        className="bg-orange-500 text-white text-[11px] px-2 py-1 rounded w-full flex items-center justify-center gap-1 disabled:opacity-50"
-      >
-        <Mail className="w-3 h-3" />
-        {reminderLoading[loan._id] ? "Sending..." : "Reminder"}
-      </button>
+        <button
+          onClick={() => handleSendReminder(loan)}
+          disabled={sending}
+          className="bg-amber-500 text-white text-[11px] px-2 py-1 rounded w-full flex items-center justify-center gap-1 disabled:opacity-50"
+        >
+          <RefreshCw className="w-3 h-3" />
+          {sending ? "Sending..." : "Remind Again"}
+        </button>
+      </div>
     );
-  };
+  }
+
+  return (
+    <button
+      onClick={() => handleSendReminder(loan)}
+      disabled={sending}
+      className="bg-orange-500 text-white text-[11px] px-2 py-1 rounded w-full flex items-center justify-center gap-1 disabled:opacity-50"
+    >
+      <Mail className="w-3 h-3" />
+      {sending ? "Sending..." : "Reminder"}
+    </button>
+  );
+};
 
   // ─────────────────────────────────────────────────────────────
   // Render

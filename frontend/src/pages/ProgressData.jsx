@@ -107,6 +107,47 @@ function inlineComputedStyles(orig, clone) {
   });
 }
 
+// Sample name used until a real name is typed in the "Prepared by" box
+const SAMPLE_NAME = "Juan Dela Cruz";
+
+// Read the logged-in staff (name / position) from localStorage or from the login token
+function getLoggedInStaff() {
+  try {
+    for (const key of ["staff", "user", "staffInfo", "admin", "currentUser"]) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const obj = JSON.parse(raw);
+      const src = obj?.staff || obj?.user || obj;
+      if (src && (src.position || src.name)) {
+        return { name: src.name || "", position: src.position || "" };
+      }
+    }
+    const token = localStorage.getItem("token");
+    if (token && token.split(".").length === 3) {
+      const payload = JSON.parse(
+        atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/"))
+      );
+      if (payload && (payload.position || payload.name)) {
+        return { name: payload.name || "", position: payload.position || "" };
+      }
+    }
+  } catch {
+    // ignore and fall back below
+  }
+  return { name: "", position: "" };
+}
+
+const formatReportDate = (d) =>
+  d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+// Put today's date (the moment the staff clicks Export) into the exported copy
+function stampGeneratedDate(root) {
+  const today = formatReportDate(new Date());
+  root.querySelectorAll("[data-generated-date]").forEach((el) => {
+    el.textContent = today;
+  });
+}
+
 export default function ProgressData() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState("");
@@ -115,9 +156,8 @@ export default function ProgressData() {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 
-  const [year] = useState(currentYear);
+  const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
-  const [availableMonths, setAvailableMonths] = useState([]);
   const [tempData, setTempData] = useState(null);
   const [mostBorrowed, setMostBorrowed] = useState([]);
   const [returnIssues, setReturnIssues] = useState([]);
@@ -125,19 +165,27 @@ export default function ProgressData() {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(new Date());
 
+  // Who is preparing the report (position comes from the logged-in staff)
+  const [staffInfo] = useState(getLoggedInStaff);
+  const [preparedBy, setPreparedBy] = useState(staffInfo.name || SAMPLE_NAME);
+  const position = staffInfo.position || "Library Staff";
+
+  // Year / month dropdown options
+  const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - i);
+  const monthCount = year === currentYear ? currentMonth : 12;
+  const availableMonths = Array.from({ length: monthCount }, (_, i) => i + 1);
+
+  const handleYearChange = (e) => {
+    const y = Number(e.target.value);
+    setYear(y);
+    if (y === currentYear && month > currentMonth) setMonth(currentMonth);
+  };
+
   const token = localStorage.getItem("token");
  const headers = {
   "Content-Type": "application/json",
   Authorization: `Bearer ${token}`,
 };
-
-  useEffect(() => {
-    const months = [];
-    for (let i = 1; i <= currentMonth; i++) {
-      months.push(i);
-    }
-    setAvailableMonths(months);
-  }, [currentMonth]);
 
   const handlePinSubmit = async (e) => {
   e.preventDefault();
@@ -261,6 +309,9 @@ export default function ProgressData() {
 
     const clone = element.cloneNode(true);
 
+    // Date the report was generated (today, when the staff clicks Export)
+    stampGeneratedDate(clone);
+
     // 1. Copy the on-screen styling onto the clone (before removing icons so both trees match)
     inlineComputedStyles(element, clone);
 
@@ -347,6 +398,9 @@ export default function ProgressData() {
     clone.style.border = "none";
     clone.style.boxShadow = "none";
 
+    // Date the report was generated (today, when the staff clicks Export)
+    stampGeneratedDate(clone);
+
     const holder = document.createElement("div");
     holder.style.position = "fixed";
     holder.style.left = "-10000px";
@@ -369,7 +423,7 @@ export default function ProgressData() {
             scrollY: 0,
           },
           jsPDF: { unit: "in", format: "a4", orientation: "portrait" },
-          pagebreak: { mode: ["css", "legacy"], avoid: ["tr", "h3"] },
+          pagebreak: { mode: ["css", "legacy"], avoid: ["tr", "h3", ".signature-block"] },
         })
         .save();
       toast.success("PDF exported successfully");
@@ -448,19 +502,58 @@ export default function ProgressData() {
     <div className="p-4 md:p-6 space-y-4 max-w-5xl mx-auto text-[12pt]">
       <Toaster position="top-right" />
 
-      {/* Control Header & Live Sync Status */}
+      {/* Report period, prepared-by and live sync status */}
       <div className="flex flex-wrap justify-between items-center gap-3 bg-white p-3 rounded-lg shadow-sm border border-gray-200">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[#1B3A6B] font-bold text-sm">Select Month:</span>
-          {availableMonths.map((m) => (
-            <button
-              key={m}
-              onClick={() => setMonth(m)}
-              className={`px-3 py-1 rounded text-xs font-semibold transition ${month === m ? "bg-[#1B3A6B] text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"}`}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <label htmlFor="report-year" className="text-[#1B3A6B] font-bold text-sm">
+              Year:
+            </label>
+            <select
+              id="report-year"
+              value={year}
+              onChange={handleYearChange}
+              className="border border-gray-300 rounded px-2 py-1 text-xs font-semibold text-[#1B3A6B] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
             >
-              {monthNames[m - 1]} {year}
-            </button>
-          ))}
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="report-month" className="text-[#1B3A6B] font-bold text-sm">
+              Month:
+            </label>
+            <select
+              id="report-month"
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+              className="border border-gray-300 rounded px-2 py-1 text-xs font-semibold text-[#1B3A6B] bg-white focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
+            >
+              {availableMonths.map((m) => (
+                <option key={m} value={m}>
+                  {monthNames[m - 1]}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="prepared-by" className="text-[#1B3A6B] font-bold text-sm">
+              Prepared by:
+            </label>
+            <input
+              id="prepared-by"
+              type="text"
+              value={preparedBy}
+              onChange={(e) => setPreparedBy(e.target.value)}
+              placeholder="Full name"
+              className="border border-gray-300 rounded px-2 py-1 text-xs w-44 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
+            />
+          </div>
         </div>
 
         {/* Live Pulsing Ping Indicator */}
@@ -622,6 +715,40 @@ export default function ProgressData() {
             </table>
           </div>
         )}
+
+        {/* Signature / Verification Block */}
+        <div
+          className="signature-block mt-10"
+          style={{ pageBreakInside: "avoid", breakInside: "avoid" }}
+        >
+          <table className="w-full text-xs border-collapse">
+            <tbody>
+              <tr>
+                <td className="align-top p-1.5" style={{ width: "60%" }}>
+                  <p className="text-gray-600">Prepared by:</p>
+                  <div
+                    className="mt-10 border-t border-gray-800 pt-1 text-center font-bold text-gray-900"
+                    style={{ width: "85%" }}
+                  >
+                    {preparedBy.trim() || SAMPLE_NAME}
+                  </div>
+                  <p className="text-center text-gray-700" style={{ width: "85%" }}>
+                    {position}
+                  </p>
+                  <p className="text-center text-gray-400 text-[10px]" style={{ width: "85%" }}>
+                    Signature over printed name
+                  </p>
+                </td>
+                <td className="align-top p-1.5 text-right">
+                  <p className="text-gray-600">Date generated:</p>
+                  <p className="font-bold text-gray-900" data-generated-date>
+                    {formatReportDate(new Date())}
+                  </p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Export Action Buttons */}

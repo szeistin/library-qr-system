@@ -5,6 +5,51 @@ import { Toaster, toast } from "sonner";
 const API_URL = import.meta.env.VITE_API_URL;
 const OTHERS_VALUE = "__others__";
 
+// Keep only digits (and X for ISBN-10)
+const cleanIsbn = (v = "") => v.replace(/[^0-9Xx]/g, "").toUpperCase();
+
+// Free lookup #1: Open Library
+async function lookupOpenLibrary(isbn) {
+  const res = await fetch(
+    `https://openlibrary.org/api/books?bibkeys=ISBN:${isbn}&format=json&jscmd=data`
+  );
+  if (!res.ok) return null;
+  const json = await res.json();
+  const d = json[`ISBN:${isbn}`];
+  if (!d) return null;
+  return {
+    title: [d.title, d.subtitle].filter(Boolean).join(": "),
+    author: (d.authors || []).map((a) => a.name).join(", "),
+    publisher: (d.publishers || []).map((p) => p.name).join(", "),
+    date_published: d.publish_date || "",
+  };
+}
+
+// Free lookup #2 (fallback): Google Books
+async function lookupGoogleBooks(isbn) {
+  const res = await fetch(
+    `https://www.googleapis.com/books/v1/volumes?q=isbn:${isbn}&maxResults=1`
+  );
+  if (!res.ok) return null;
+  const json = await res.json();
+  const v = json.items?.[0]?.volumeInfo;
+  if (!v) return null;
+  return {
+    title: [v.title, v.subtitle].filter(Boolean).join(": "),
+    author: (v.authors || []).join(", "),
+    publisher: v.publisher || "",
+    date_published: v.publishedDate || "",
+  };
+}
+
+const safeLookup = async (fn, isbn) => {
+  try {
+    return await fn(isbn);
+  } catch {
+    return null;
+  }
+};
+
 export default function ManageBooks() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState("");
@@ -23,11 +68,15 @@ export default function ManageBooks() {
     category: "",
     total_copies: "",
     available_copies: "",
+    isbn: "",
+    publisher: "",
+    date_published: "",
   });
   // "Others" category support
   const [isOtherCategory, setIsOtherCategory] = useState(false);
   const [customCategory, setCustomCategory] = useState("");
   const [loading, setLoading] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
 
   // New state to hold our dynamic stats
   const [stats, setStats] = useState({
@@ -134,8 +183,11 @@ export default function ManageBooks() {
     .filter((book) => {
       const matchesSearch =
         searchTerm === "" ||
-        book.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        book.author.toLowerCase().includes(searchTerm.toLowerCase());
+        (book.title || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (book.author || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (book.isbn || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (cleanIsbn(searchTerm) !== "" &&
+          cleanIsbn(book.isbn || "").includes(cleanIsbn(searchTerm)));
       const matchesCategory =
         selectedCategory === "" || book.category === selectedCategory;
       return matchesSearch && matchesCategory;
@@ -165,6 +217,9 @@ export default function ManageBooks() {
         category: isCustom ? "" : cat,
         total_copies: String(book.total_copies ?? ""),
         available_copies: String(book.available_copies ?? ""),
+        isbn: book.isbn || "",
+        publisher: book.publisher || "",
+        date_published: book.date_published || "",
       });
       setIsOtherCategory(isCustom);
       setCustomCategory(isCustom ? cat : "");
@@ -176,6 +231,9 @@ export default function ManageBooks() {
         category: "",
         total_copies: "",
         available_copies: "",
+        isbn: "",
+        publisher: "",
+        date_published: "",
       });
       setIsOtherCategory(false);
       setCustomCategory("");
@@ -192,6 +250,9 @@ export default function ManageBooks() {
       category: "",
       total_copies: "",
       available_copies: "",
+      isbn: "",
+      publisher: "",
+      date_published: "",
     });
     setIsOtherCategory(false);
     setCustomCategory("");
@@ -216,6 +277,50 @@ export default function ManageBooks() {
     }
   };
 
+  // Fill in the form from a typed ISBN
+  const handleIsbnLookup = async () => {
+    const isbn = cleanIsbn(formData.isbn);
+    if (isbn.length !== 10 && isbn.length !== 13) {
+      toast.error("Please enter a valid 10 or 13-digit ISBN");
+      return;
+    }
+
+    // Already in the library? Open it so staff can just update the copies.
+    const existing = books.find(
+      (b) => cleanIsbn(b.isbn || "") === isbn && b._id !== editingBook?._id
+    );
+    if (existing) {
+      toast.info("This ISBN is already in the library. You can update its copies here.");
+      handleOpenModal(existing);
+      return;
+    }
+
+    setLookupLoading(true);
+    try {
+      const found =
+        (await safeLookup(lookupOpenLibrary, isbn)) ||
+        (await safeLookup(lookupGoogleBooks, isbn));
+
+      if (!found) {
+        toast.error("No details found for this ISBN. Please fill in the details manually.");
+        setFormData((prev) => ({ ...prev, isbn }));
+        return;
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        isbn,
+        title: found.title || prev.title,
+        author: found.author || prev.author,
+        publisher: found.publisher || prev.publisher,
+        date_published: found.date_published || prev.date_published,
+      }));
+      toast.success("Book details found. Please review them and enter the copies.");
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -233,6 +338,17 @@ export default function ManageBooks() {
       return;
     }
 
+    const isbn = cleanIsbn(formData.isbn);
+    if (isbn) {
+      const duplicate = books.find(
+        (b) => cleanIsbn(b.isbn || "") === isbn && b._id !== editingBook?._id
+      );
+      if (duplicate) {
+        toast.error(`A book with this ISBN already exists: "${duplicate.title}"`);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const url = editingBook
@@ -244,6 +360,7 @@ export default function ManageBooks() {
         headers,
         body: JSON.stringify({
           ...formData,
+          isbn,
           category: finalCategory,
           total_copies: Number(formData.total_copies),
           available_copies: Number(formData.available_copies),
@@ -381,7 +498,7 @@ export default function ManageBooks() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="text"
-            placeholder="Search by title or author..."
+            placeholder="Search by title, author or ISBN..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
@@ -408,6 +525,8 @@ export default function ManageBooks() {
               <th className="p-3 text-left">Title</th>
               <th className="p-3 text-left">Author</th>
               <th className="p-3 text-left">Category</th>
+              <th className="p-3 text-left">ISBN</th>
+              <th className="p-3 text-left">Published</th>
               <th className="p-3 text-center">Total</th>
               <th className="p-3 text-center">Available</th>
               <th className="p-3 text-center">Borrowed</th>
@@ -417,14 +536,14 @@ export default function ManageBooks() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={7} className="text-center py-8">
+                <td colSpan={9} className="text-center py-8">
                   Loading...
                 </td>
               </tr>
             )}
             {!loading && filteredBooks.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center py-8 text-gray-500">
+                <td colSpan={9} className="text-center py-8 text-gray-500">
                   No books found.
                 </td>
               </tr>
@@ -434,6 +553,8 @@ export default function ManageBooks() {
                 <td className="p-3 font-medium">{book.title}</td>
                 <td className="p-3">{book.author || "—"}</td>
                 <td className="p-3">{book.category || "—"}</td>
+                <td className="p-3">{book.isbn || "—"}</td>
+                <td className="p-3">{book.date_published || "—"}</td>
                 <td className="p-3 text-center">{book.total_copies}</td>
                 <td className="p-3 text-center">{book.available_copies}</td>
                 <td className="p-3 text-center">
@@ -461,7 +582,7 @@ export default function ManageBooks() {
 
       {modalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full p-6">
+          <div className="bg-white rounded-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-[#1B3A6B]">
                 {editingBook ? "Edit Book" : "Add New Book"}
@@ -471,6 +592,38 @@ export default function ManageBooks() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  ISBN <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    name="isbn"
+                    value={formData.isbn}
+                    onChange={handleInputChange}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleIsbnLookup();
+                      }
+                    }}
+                    placeholder="Type the ISBN (10 or 13 digits)"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleIsbnLookup}
+                    disabled={lookupLoading}
+                    className="px-3 py-2 bg-[#1B3A6B] text-white rounded-lg text-sm whitespace-nowrap disabled:opacity-50"
+                  >
+                    {lookupLoading ? "Searching..." : "Look up"}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Type the ISBN, then press Enter or click Look up to fill in the details automatically.
+                </p>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Title *
@@ -522,6 +675,33 @@ export default function ManageBooks() {
                     className="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
                   />
                 )}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Publisher
+                  </label>
+                  <input
+                    type="text"
+                    name="publisher"
+                    value={formData.publisher}
+                    onChange={handleInputChange}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date Published
+                  </label>
+                  <input
+                    type="text"
+                    name="date_published"
+                    value={formData.date_published}
+                    onChange={handleInputChange}
+                    placeholder="e.g. 2019"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#1B3A6B]"
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

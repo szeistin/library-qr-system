@@ -11,8 +11,26 @@ import {
    LogOut,
    AlertTriangle,
    Lock,
+   Clock,
+   Sparkles,
+   BookMarked,
+   Lightbulb,
+   CheckCircle2,
+   Library,
 } from "lucide-react";
 import { getVisitorLoans, getRecommendedBooks } from "../api/api";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Friendly tips shown while a book is out (changes daily)
+const readingTips = [
+   "Set aside 15 minutes a day. Small sessions add up quickly.",
+   "Jot down a favorite line or idea as you read.",
+   "Keep your book away from water and food so it stays in great shape.",
+   "Pick a cozy, well-lit spot. It makes reading much easier.",
+   "Pick a return day ahead of time so you never have to rush.",
+   "Share what you learned with a friend. It helps you remember it.",
+];
 
 export default function VisitorHome() {
    const navigate = useNavigate();
@@ -123,6 +141,56 @@ export default function VisitorHome() {
    // A visitor who still has a borrowed (not yet returned) book cannot borrow again
    const hasActiveLoan = borrowedBooks.some((loan) => loan.status === "borrowed");
    const cannotBorrow = isBlocked || hasActiveLoan;
+
+   // Loans split into "still with the visitor" and "already returned"
+   const currentLoans = borrowedBooks.filter((l) => l.status !== "returned");
+   const returnedLoans = borrowedBooks.filter((l) => l.status === "returned");
+
+   const tipOfTheDay = readingTips[new Date().getDate() % readingTips.length];
+
+   // Look and wording for the "Currently reading" card
+   const getLoanInfo = (loan) => {
+      const dueZero = new Date(loan.due_date).setHours(0, 0, 0, 0);
+      const daysLeft = Math.round((dueZero - todayZero) / DAY_MS);
+
+      const problem =
+         loan.status === "not_returned" ||
+         loan.status === "unretrieved" ||
+         loan.status === "overdue" ||
+         daysLeft < 0;
+
+      if (problem) {
+         const late = Math.abs(daysLeft);
+         return {
+            gradient: "from-rose-500 to-red-600",
+            chip:
+               daysLeft < 0
+                  ? `${late} day${late > 1 ? "s" : ""} past due`
+                  : "Needs attention",
+            message:
+               "Please bring this book to the library counter. Our staff will be glad to help.",
+         };
+      }
+      if (daysLeft === 0) {
+         return {
+            gradient: "from-amber-500 to-orange-500",
+            chip: "Due today",
+            message: "Almost time! Drop it off at the library when you're done.",
+         };
+      }
+      if (daysLeft === 1) {
+         return {
+            gradient: "from-amber-500 to-orange-500",
+            chip: "Due tomorrow",
+            message: "Just a little more reading. You can return it tomorrow.",
+         };
+      }
+      return {
+         gradient: "from-[#1B3A6B] to-[#2a5298]",
+         chip: `${daysLeft} days left`,
+         message: "Take your time and enjoy the story.",
+      };
+   };
 
    return (
       <>
@@ -236,8 +304,63 @@ export default function VisitorHome() {
                )}
             </div>
 
-            {/* Borrow Banner (Disabled if restricted or has an active loan) */}
-            {cannotBorrow ? (
+            {/* Currently Reading (shown while a book is still with the visitor) */}
+            {currentLoans.length > 0 && (
+               <div className="space-y-2">
+                  {currentLoans.map((loan) => {
+                     const info = getLoanInfo(loan);
+                     const due = new Date(loan.due_date);
+                     const borrowed = new Date(loan.borrow_date);
+                     return (
+                        <div
+                           key={loan._id}
+                           className={`bg-gradient-to-br ${info.gradient} rounded-xl p-3 shadow-sm text-white relative overflow-hidden`}
+                        >
+                           <div className="absolute -right-5 -top-5 w-20 h-20 bg-white/10 rounded-full" />
+                           <div className="relative">
+                              <div className="flex items-center justify-between">
+                                 <span className="flex items-center gap-1 text-[10px] font-semibold bg-white/20 px-2 py-0.5 rounded-full">
+                                    <BookMarked className="w-3 h-3" /> Currently
+                                    reading
+                                 </span>
+                                 <span className="flex items-center gap-1 text-[10px] font-bold bg-white text-[#1B3A6B] px-2 py-0.5 rounded-full">
+                                    <Clock className="w-3 h-3" /> {info.chip}
+                                 </span>
+                              </div>
+
+                              <div className="flex items-center gap-2.5 mt-2">
+                                 <div className="w-9 h-12 bg-white/20 rounded-md flex items-center justify-center shrink-0">
+                                    <BookOpen className="w-4 h-4 text-white" />
+                                 </div>
+                                 <div className="min-w-0">
+                                    <p className="font-bold text-[13px] leading-snug">
+                                       {loan.book?.title || "Unknown Book"}
+                                    </p>
+                                    <p className="text-white/80 text-[11px]">
+                                       {loan.book?.author || "Unknown Author"}
+                                    </p>
+                                 </div>
+                              </div>
+
+                              <div className="flex justify-between text-[10px] text-white/80 mt-2">
+                                 <span>
+                                    Borrowed {borrowed.toLocaleDateString()}
+                                 </span>
+                                 <span>Due {due.toLocaleDateString()}</span>
+                              </div>
+
+                              <p className="text-white/90 text-[11px] mt-1.5">
+                                 {info.message}
+                              </p>
+                           </div>
+                        </div>
+                     );
+                  })}
+               </div>
+            )}
+
+            {/* Borrow Banner */}
+            {isBlocked ? (
                <div className="bg-gray-200 rounded-2xl p-4 shadow-sm flex items-center justify-between opacity-75 cursor-not-allowed">
                   <div className="flex items-center gap-3">
                      <div className="w-10 h-10 bg-gray-400/30 rounded-xl flex items-center justify-center">
@@ -245,16 +368,26 @@ export default function VisitorHome() {
                      </div>
                      <div>
                         <p className="text-gray-700 font-bold text-sm">
-                           {isBlocked
-                              ? "BORROWING DISABLED"
-                              : "RETURN YOUR BOOK FIRST"}
+                           BORROWING DISABLED
                         </p>
                         <p className="text-gray-500 text-xs">
-                           {isBlocked
-                              ? "Resolve your unreturned or overdue books to continue"
-                              : "You can borrow again after returning your borrowed book"}
+                           Resolve your unreturned or overdue books to continue
                         </p>
                      </div>
+                  </div>
+               </div>
+            ) : hasActiveLoan ? (
+               <div className="bg-gradient-to-r from-[#EBF0F7] to-white border border-blue-100 rounded-xl p-3 shadow-sm flex items-center gap-3">
+                  <div className="w-9 h-9 bg-[#1B3A6B]/10 rounded-lg flex items-center justify-center">
+                     <Sparkles className="w-4 h-4 text-[#1B3A6B]" />
+                  </div>
+                  <div>
+                     <p className="text-[#1B3A6B] font-bold text-sm">
+                        Happy reading!
+                     </p>
+                     <p className="text-gray-500 text-xs">
+                        Come back for your next book after you return this one.
+                     </p>
                   </div>
                </div>
             ) : (
@@ -278,63 +411,41 @@ export default function VisitorHome() {
                </Link>
             )}
 
-            {/* Borrowed Books History */}
-            <div>
-               <div className="flex justify-between items-center mb-2">
-                  <h3 className="text-sm font-bold text-[#1B3A6B]">
+            {/* Borrowed Books History (returned books) */}
+            {loadingLoans ? (
+               <div className="text-center text-gray-400 text-sm py-2">
+                  Loading your history...
+               </div>
+            ) : borrowedBooks.length === 0 ? (
+               <div>
+                  <h3 className="text-sm font-bold text-[#1B3A6B] mb-2">
                      Your borrowed books
                   </h3>
-                  <Link
-                     to="/mobile/history"
-                     className="text-xs text-blue-600 font-medium"
-                  >
-                     View Full History →
-                  </Link>
-               </div>
-               {loadingLoans ? (
-                  <div className="text-center text-gray-400 text-sm py-2">
-                     Loading your history...
-                  </div>
-               ) : borrowedBooks.length === 0 ? (
                   <div className="text-center text-gray-400 text-sm py-2">
                      You haven't borrowed any books yet.
                   </div>
-               ) : (
-                  <div className="space-y-2">
-                     {borrowedBooks.slice(0, 3).map((loan) => {
-                        const due = new Date(loan.due_date);
-                        const dueZero = new Date(due).setHours(0, 0, 0, 0);
-
-                        let statusText = "";
-                        let statusClass = "";
-
-                        if (loan.status === "returned") {
-                           statusText = "Returned";
-                           statusClass = "bg-gray-100 text-gray-600";
-                        } else if (loan.status === "not_returned") {
-                           statusText = "Not Returned (Restricted)";
-                           statusClass = "bg-red-100 text-red-700 font-bold";
-                        } else if (loan.status === "unretrieved") {
-                           statusText = "Unretrieved (Blocked)";
-                           statusClass = "bg-red-100 text-red-700 font-bold";
-                        } else if (
-                           dueZero < todayZero ||
-                           loan.status === "overdue"
-                        ) {
-                           statusText = "Overdue";
-                           statusClass = "bg-red-100 text-red-600 font-bold";
-                        } else if (dueZero === todayZero) {
-                           statusText = "Due Today";
-                           statusClass = "bg-orange-100 text-orange-600";
-                        } else {
-                           statusText = "Active";
-                           statusClass = "bg-green-100 text-green-600";
-                        }
-
-                        return (
+               </div>
+            ) : (
+               returnedLoans.length > 0 && (
+                  <div>
+                     <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-sm font-bold text-[#1B3A6B]">
+                           {currentLoans.length > 0
+                              ? "Previously borrowed"
+                              : "Your borrowed books"}
+                        </h3>
+                        <Link
+                           to="/mobile/history"
+                           className="text-xs text-blue-600 font-medium"
+                        >
+                           View Full History →
+                        </Link>
+                     </div>
+                     <div className="space-y-2">
+                        {returnedLoans.slice(0, 3).map((loan) => (
                            <div
                               key={loan._id}
-                              className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex justify-between items-start"
+                              className="bg-white rounded-xl p-3 border border-gray-100 border-l-4 border-l-green-400 shadow-sm flex justify-between items-start"
                            >
                               <div>
                                  <p className="text-[#1B3A6B] text-xs font-bold">
@@ -349,84 +460,111 @@ export default function VisitorHome() {
                                        loan.borrow_date,
                                     ).toLocaleDateString()}
                                  </p>
-                                 {loan.status !== "returned" && (
+                                 {loan.return_date && (
                                     <p className="text-xs text-gray-500">
-                                       Due: {due.toLocaleDateString()}
+                                       Returned:{" "}
+                                       {new Date(
+                                          loan.return_date,
+                                       ).toLocaleDateString()}
                                     </p>
                                  )}
                               </div>
-                              <span
-                                 className={`text-xs px-2 py-0.5 rounded-full ${statusClass}`}
-                              >
-                                 {statusText}
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-600 flex items-center gap-1">
+                                 <CheckCircle2 className="w-3 h-3" /> Returned
                               </span>
                            </div>
-                        );
-                     })}
+                        ))}
+                     </div>
                   </div>
-               )}
-            </div>
+               )
+            )}
 
-            {/* Recommended Books */}
-            <div>
-               <div className="flex items-center gap-1 mb-2">
-                  <Star className="w-4 h-4 text-[#C9A227] fill-[#C9A227]" />
-                  <p className="text-[#1B3A6B] text-sm font-bold">
-                     Recommended for You
+            {/* Recommended Books, or "While you read" when a book is still out */}
+            {cannotBorrow ? (
+               <div className="space-y-3">
+                  <div className="flex items-center gap-1">
+                     <Sparkles className="w-4 h-4 text-[#C9A227]" />
+                     <p className="text-[#1B3A6B] text-sm font-bold">
+                        While you read
+                     </p>
+                  </div>
+
+                  <div className="bg-gradient-to-r from-[#FFF8E1] to-white border border-[#C9A227]/30 rounded-xl p-3 flex gap-3">
+                     <div className="w-9 h-9 bg-[#C9A227]/20 rounded-full flex items-center justify-center shrink-0">
+                        <Lightbulb className="w-4 h-4 text-[#C9A227]" />
+                     </div>
+                     <div>
+                        <p className="text-[#1B3A6B] text-xs font-bold">
+                           Reading tip of the day
+                        </p>
+                        <p className="text-gray-600 text-xs mt-0.5">
+                           {tipOfTheDay}
+                        </p>
+                     </div>
+                  </div>
+
+            
+
+                  <p className="text-center text-gray-400 text-xs">
+                     New book picks will be waiting for you after you return your
+                     book.
                   </p>
                </div>
-               {loadingRecs ? (
-                  <div className="text-sm text-gray-400 py-2">Loading...</div>
-               ) : recommendedBooks.length === 0 ? (
-                  <div className="text-sm text-gray-400 py-2">
-                     No recommendations available.
+            ) : (
+               <div>
+                  <div className="flex items-center gap-1 mb-2">
+                     <Star className="w-4 h-4 text-[#C9A227] fill-[#C9A227]" />
+                     <p className="text-[#1B3A6B] text-sm font-bold">
+                        Recommended for You
+                     </p>
                   </div>
-               ) : (
-                  <div className="space-y-2">
-                     {/* Recommended Books List */}
-                     {recommendedBooks.slice(0, 3).map((book) => (
-                        <div
-                           key={book._id}
-                           onClick={() => {
-                              if (!cannotBorrow) {
+                  {loadingRecs ? (
+                     <div className="text-sm text-gray-400 py-2">Loading...</div>
+                  ) : recommendedBooks.length === 0 ? (
+                     <div className="text-sm text-gray-400 py-2">
+                        No recommendations available.
+                     </div>
+                  ) : (
+                     <div className="space-y-2">
+                        {/* Recommended Books List */}
+                        {recommendedBooks.slice(0, 3).map((book) => (
+                           <div
+                              key={book._id}
+                              onClick={() =>
                                  navigate("/mobile/borrow", {
                                     state: {
                                        tab: "recommendations",
                                        selectedBook: book,
                                     },
-                                 });
+                                 })
                               }
-                           }}
-                           className={`bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-center gap-3 transition-all ${
-                              cannotBorrow
-                                 ? "opacity-60 cursor-not-allowed"
-                                 : "cursor-pointer hover:border-blue-300 hover:shadow-md"
-                           }`}
-                        >
-                           <div className="w-10 h-12 bg-gradient-to-b from-[#1B3A6B] to-[#2a5298] rounded-lg flex items-center justify-center shrink-0">
-                              <BookOpen className="w-5 h-5 text-white" />
-                           </div>
-                           <div className="flex-1 min-w-0">
-                              <p className="text-[#1B3A6B] text-xs font-bold truncate">
-                                 {book.title}
-                              </p>
-                              <p className="text-gray-400 text-xs truncate">
-                                 {book.author}
-                              </p>
-                              <div className="flex items-center gap-2 mt-1">
-                                 <span className="text-xs bg-[#EBF0F7] text-[#1B3A6B] px-2 py-0.5 rounded-full">
-                                    {book.category}
-                                 </span>
+                              className="bg-white rounded-xl p-3 border border-gray-100 shadow-sm flex items-center gap-3 transition-all cursor-pointer hover:border-blue-300 hover:shadow-md"
+                           >
+                              <div className="w-10 h-12 bg-gradient-to-b from-[#1B3A6B] to-[#2a5298] rounded-lg flex items-center justify-center shrink-0">
+                                 <BookOpen className="w-5 h-5 text-white" />
                               </div>
+                              <div className="flex-1 min-w-0">
+                                 <p className="text-[#1B3A6B] text-xs font-bold truncate">
+                                    {book.title}
+                                 </p>
+                                 <p className="text-gray-400 text-xs truncate">
+                                    {book.author}
+                                 </p>
+                                 <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-xs bg-[#EBF0F7] text-[#1B3A6B] px-2 py-0.5 rounded-full">
+                                       {book.category}
+                                    </span>
+                                 </div>
+                              </div>
+                              <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full shrink-0">
+                                 Available
+                              </span>
                            </div>
-                           <span className="text-xs text-green-600 bg-green-50 px-2 py-0.5 rounded-full shrink-0">
-                              Available
-                           </span>
-                        </div>
-                     ))}
-                  </div>
-               )}
-            </div>
+                        ))}
+                     </div>
+                  )}
+               </div>
+            )}
          </div>
       </>
    );

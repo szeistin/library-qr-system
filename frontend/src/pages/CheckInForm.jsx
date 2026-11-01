@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { registerVisitor } from "../api/api";
+import AddressSelect from "../components/AddressSelectTemp";
 import {
   ArrowLeft, User, MapPin, Calendar, Users, GraduationCap, Briefcase, Target, Accessibility
 } from "lucide-react";
+
 
 const professionOptions = ["Student", "Teacher", "Government Employee", "Private Employee", "Self-Employed", "Retired", "Other"];
 const purposeOptions = ["Study / Research", "Read Books", "Borrow Books", "Attend Event", "Use Computer", "Other"];
@@ -183,12 +185,11 @@ export default function CheckInForm() {
           {fieldErrors.name && <p className="text-red-500 text-xs mt-0.5">{fieldErrors.name}</p>}
         </div>
 
-        <div>
-          <label className="flex items-center gap-1 text-xs text-gray-600 font-semibold uppercase tracking-wide mb-1">
-            <MapPin className="w-3 h-3" /> Address
-          </label>
-          <input type="text" name="address" value={formData.address} onChange={handleChange} className={inputClass("address")} placeholder="Polangui, Albay" />
-        </div>
+       <AddressSelect
+  value={formData.address}
+  onChange={(addr) => setFormData((prev) => ({ ...prev, address: addr }))}
+  selectClass={inputClass("address")}
+/>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
